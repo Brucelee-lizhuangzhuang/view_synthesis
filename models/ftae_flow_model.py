@@ -28,7 +28,7 @@ def rotation_tensor(yaw, n_comps, gpu):
     return rot_z
 
 class FTAE(nn.Module):
-    def __init__(self, input_nc, ndf=64, n_layers=7,
+    def __init__(self, input_nc, ndf=64, n_layers=7, upsample='basic',
                  norm_layer=None, nl_layer=None, gpu_ids=[],nz=200):
         super(FTAE, self).__init__()
         self.gpu_ids = gpu_ids
@@ -43,7 +43,7 @@ class FTAE(nn.Module):
             enc += [
                 nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult,
                           kernel_size=kw, stride=2, padding=padw)]
-            if norm_layer is not None  and n < 6:
+            if norm_layer is not None and n < n_layers-1:
                 enc += [norm_layer(ndf * nf_mult)]
                 enc += [nl_layer()]
         # sequence += [nn.AvgPool2d(8)]
@@ -55,13 +55,13 @@ class FTAE(nn.Module):
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
             nf_mult = min(2**(n_layers - n - 1), 4)
-            deconv += [
-                nn.ConvTranspose2d(ndf * nf_mult_prev, ndf * nf_mult,
-                          kernel_size=kw, stride=2, padding=padw)]
-            if norm_layer is not None and (n_layers - n + 1) < 7:
+            deconv += networks.upsampleLayer(ndf * nf_mult_prev, ndf * nf_mult, upsample=upsample)
+            if norm_layer is not None and (n_layers - n + 1) < n_layers:
                 deconv += [norm_layer(ndf * nf_mult)]
             deconv += [nl_layer()]
-        deconv += [nn.ConvTranspose2d(ndf, 2, kernel_size=kw, stride=2, padding=padw), nn.Tanh()]
+        deconv += networks.upsampleLayer(ndf, 2, upsample='bilinear')
+        deconv += [nn.Tanh()]
+
         self.deconv = nn.Sequential(*deconv)
 
         self.nz = nz
@@ -108,7 +108,7 @@ class FTAEModel(BaseModel):
         self.isTrain = opt.isTrain
         self.yaw = Variable(torch.Tensor([-np.pi/4.]).cuda(opt.gpu_ids[0], async=True), requires_grad=False)
         # load/define networks
-        self.netG = FTAE(opt.input_nc,opt.ngf,
+        self.netG = FTAE(opt.input_nc,opt.ngf, n_layers=int(np.log2(opt.fineSize)), upsample=opt.upsample,
                          norm_layer = networks.get_norm_layer(norm_type=opt.norm),
                          nl_layer=networks.get_non_linearity(layer_type='lrelu'), gpu_ids=opt.gpu_ids, nz=opt.nz)
         if len(opt.gpu_ids) > 0:
@@ -167,6 +167,10 @@ class FTAEModel(BaseModel):
         AtoB = self.opt.which_direction == 'AtoB'
         input_A = input['A' if AtoB else 'B']
         input_B = input['B' if AtoB else 'A']
+
+        self.b_path = input['B_paths'][0]
+        self.c_path = input['C_paths'][0]
+
         # input_A = input['B']
         # input_B = flip(input_A,3)
 
@@ -177,13 +181,22 @@ class FTAEModel(BaseModel):
         self.input_B = input_B
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
+        input_C = input['C']
+        if len(self.gpu_ids) > 0:
+            input_C = input_C.cuda(self.gpu_ids[0], async=True)
+        self.input_C = input_C
+
     def forward(self):
         add_grid = self.opt.add_grid
         rectified = self.opt.rectified
         self.real_A = Variable(self.input_A)
+        self.real_C = Variable(self.input_C)+self.grid
+
         self.fake_B_flow,_ = self.netG(self.real_A, self.yaw)
-        self.fake_B = torch.nn.functional.grid_sample(self.real_A, convert_flow(self.fake_B_flow,self.grid,add_grid,rectified))
+        self.fake_B_flow_converted = convert_flow(self.fake_B_flow,self.grid,add_grid,rectified)
+        self.fake_B = torch.nn.functional.grid_sample(self.real_A, self.fake_B_flow_converted)
         self.real_B = Variable(self.input_B)
+
 
         self.fake_B_0_flow,_  = self.netG(self.real_A, Variable(torch.Tensor([0        ]).cuda(self.gpu_ids[0], async=True)))
         self.fake_B_0 = torch.nn.functional.grid_sample(self.real_A, convert_flow(self.fake_B_0_flow,self.grid,add_grid,rectified))
@@ -235,12 +248,14 @@ class FTAEModel(BaseModel):
         self.loss_TV = self.criterionTV(self.fake_B_flow) * self.opt.lambda_tv
         self.loss_TV_2 = self.criterionTV(self.fake_B_0_flow) * self.opt.lambda_tv
 
+        self.loss_G_flow = self.criterionL1(self.fake_B_flow_converted.permute(0,3,1,2), self.real_C.permute(0,3,1,2)) * self.opt.lambda_flow
 
         # Second, G(A) = B
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
         self.loss_G_L1_2 = self.criterionL1(self.fake_B_0, self.real_A) * self.opt.lambda_A
 
-        self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_L1_2 + self.loss_TV + self.loss_TV_2
+        self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_L1_2 \
+                      + self.loss_TV + self.loss_TV_2 + self.loss_G_flow
 
         self.loss_G.backward()
 
@@ -259,6 +274,7 @@ class FTAEModel(BaseModel):
         return OrderedDict([('G_GAN', self.loss_G_GAN.data[0]),
                             ('G_L1', self.loss_G_L1.data[0]),
                             ('G_L1_2', self.loss_G_L1_2.data[0]),
+                            ('F_L1', self.loss_G_flow.data[0]),
                             ('TV', self.loss_TV.data[0]),
                             ('TV2', self.loss_TV_2.data[0]),
                             ('D_real', self.loss_D_real.data[0]),
@@ -275,9 +291,12 @@ class FTAEModel(BaseModel):
 
         fake_B_0 = util.tensor2im(self.fake_B_0.data)
         fake_B_18 = util.tensor2im(self.fake_B_18.data)
-        flow = util.tensor2im(self.fake_B_flow.data)
-
-        return OrderedDict([('real_A', real_A), ('fake_B_36', fake_B), ('real_B', real_B), ('fake_B_0', fake_B_0), ('fake_B_18', fake_B_18),('flow',flow)])
+        flow = util.tensor2im(self.fake_B_flow_converted.permute(0,3,1,2).data)
+        real_flow = util.tensor2im(self.real_C.permute(0,3,1,2).data)
+        print self.b_path, self.c_path
+        return OrderedDict([('real_A', real_A), ('fake_B_36', fake_B), ('real_B', real_B),
+                            ('fake_B_0', fake_B_0), ('fake_B_18', fake_B_18),
+                            ('flow',flow), ('real_flow', real_flow)])
 
     def get_current_visuals_test(self):
         real_A = util.tensor2im(self.real_A.data)

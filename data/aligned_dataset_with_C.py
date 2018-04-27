@@ -63,7 +63,7 @@ class AlignedDatasetWithC(BaseDataset):
             B = tmp.unsqueeze(0)
 
         return {'A': A, 'B': B, 'C': C,
-                'A_paths': AB_path, 'B_paths': AB_path}
+                'A_paths': AB_path, 'B_paths': AB_path, 'C_paths': C_path}
 
     def __len__(self):
         return len(self.AB_paths)

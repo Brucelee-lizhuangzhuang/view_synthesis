@@ -23,7 +23,7 @@ def create_model(opt):
         from .ftae_model import FTAEModel
         model = FTAEModel()
     elif opt.model == 'ftae_flow':
-        assert(opt.dataset_mode == 'aligned')
+        assert(opt.dataset_mode in  ['aligned','aligned_with_C'])
         from .ftae_flow_model import FTAEModel
         model = FTAEModel()
     elif opt.model == 'flow_refine':
