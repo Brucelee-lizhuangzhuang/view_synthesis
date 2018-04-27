@@ -1,7 +1,7 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/PVHM_dataset/ \
-    --dataset_mode aligned\
+    --dataroot ~/data/view_synthesis/pvhm256/ \
+    --dataset_mode aligned_with_C\
     --name ftae_flow_rect_grid_tv_pvhm\
     --model ftae_flow \
     --identity 0 \

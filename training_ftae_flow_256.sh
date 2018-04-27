@@ -12,14 +12,14 @@ python train.py\
     --display_port 8099 \
     --loadSize 256 \
     --fineSize 256 \
-    --lr 0.0002 \
+    --lr 0.00006 \
     --niter 100 \
     --niter_decay 100 \
     --batchSize 16 \
     --nz 400\
     --lambda_tv 0 \
     --lambda_gan 0 \
-    --lambda_flow 1000 \
+    --lambda_flow 0 \
     --add_grid\
     --rectified\
 

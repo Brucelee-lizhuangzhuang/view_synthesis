@@ -184,7 +184,11 @@ class FTAEModel(BaseModel):
         input_C = input['C']
         if len(self.gpu_ids) > 0:
             input_C = input_C.cuda(self.gpu_ids[0], async=True)
-        self.input_C = input_C
+        if input_C.size(2) > self.opt.fineSize:
+            stride = input_C.size(2)/self.opt.fineSize
+            self.input_C = input_C[:,::int(stride),::int(stride),:]
+        else:
+            self.input_C = input_C
 
     def forward(self):
         add_grid = self.opt.add_grid
@@ -293,7 +297,6 @@ class FTAEModel(BaseModel):
         fake_B_18 = util.tensor2im(self.fake_B_18.data)
         flow = util.tensor2im(self.fake_B_flow_converted.permute(0,3,1,2).data)
         real_flow = util.tensor2im(self.real_C.permute(0,3,1,2).data)
-        print self.b_path, self.c_path
         return OrderedDict([('real_A', real_A), ('fake_B_36', fake_B), ('real_B', real_B),
                             ('fake_B_0', fake_B_0), ('fake_B_18', fake_B_18),
                             ('flow',flow), ('real_flow', real_flow)])
