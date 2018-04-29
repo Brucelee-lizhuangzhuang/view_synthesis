@@ -14,7 +14,7 @@ python train.py\
     --display_freq 100 \
     --display_port 8099 \
     --no_dropout \
-    --lr 0.0001 \
+    --lr 0.00006 \
     --niter 100 \
     --niter_decay 100 \
     --lambda_gan 0 \
@@ -22,7 +22,8 @@ python train.py\
     --nz 200\
     --rectified\
     --add_grid\
-    --lambda_tv 1\
+    --lambda_tv 0\
+    --lambda_flow 0
 
 
 #        --which_direction BtoA\

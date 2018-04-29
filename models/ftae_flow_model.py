@@ -183,12 +183,11 @@ class FTAEModel(BaseModel):
 
         input_C = input['C']
         if len(self.gpu_ids) > 0:
-            input_C = input_C.cuda(self.gpu_ids[0], async=True)
-        if input_C.size(2) > self.opt.fineSize:
-            stride = input_C.size(2)/self.opt.fineSize
-            self.input_C = input_C[:,::int(stride),::int(stride),:]
-        else:
-            self.input_C = input_C
+            self.input_C = input_C.cuda(self.gpu_ids[0], async=True)
+
+        # self.mask = self.input_B<1.0
+        # self.mask = self.mask.all(keepdim=True)
+        # print self.mask
 
     def forward(self):
         add_grid = self.opt.add_grid

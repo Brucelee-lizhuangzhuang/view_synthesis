@@ -25,7 +25,13 @@ class AlignedDatasetWithC(BaseDataset):
 
         C_path = self.C_paths[index]
         C_arr = np.load(C_path)
+        if C_arr.shape[1] > self.opt.fineSize:
+            stride = C_arr.shape[1]/self.opt.fineSize
+            C_arr = C_arr[::int(stride),::int(stride),:]
+        else:
+            C_arr = C_arr
         C = torch.from_numpy(C_arr).float()
+
 
         w_total = AB.size(2)
         w = int(w_total / 2)
