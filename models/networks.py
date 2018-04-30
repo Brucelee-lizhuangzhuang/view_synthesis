@@ -729,7 +729,7 @@ def upsampleLayer(inplanes, outplanes, upsample='basic', padding_type='zero'):
     if upsample == 'basic':
         upconv = [nn.ConvTranspose2d(inplanes, outplanes, kernel_size=4, stride=2, padding=1)]
     elif upsample == 'bilinear':
-        upconv = [nn.Upsample(scale_factor=2, mode='bilinear',align_corners=True),
+        upconv = [nn.Upsample(scale_factor=2, mode='bilinear'),
                   nn.ReflectionPad2d(1),
                   nn.Conv2d(inplanes, outplanes, kernel_size=3, stride=1, padding=0)]
     else:
