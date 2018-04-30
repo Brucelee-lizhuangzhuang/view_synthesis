@@ -205,7 +205,6 @@ class FTAEModel(BaseModel):
         self.fake_B = torch.nn.functional.grid_sample(self.real_A, self.fake_B_flow_converted)
         self.real_B = Variable(self.input_B)
 
-
         self.fake_B_0_flow,_  = self.netG(self.real_A, Variable(torch.Tensor([0        ]).cuda(self.gpu_ids[0], async=True)))
         self.fake_B_0 = torch.nn.functional.grid_sample(self.real_A, convert_flow(self.fake_B_0_flow,self.grid,add_grid,rectified))
 
@@ -257,8 +256,8 @@ class FTAEModel(BaseModel):
         self.loss_TV_2 = self.criterionTV(self.fake_B_0_flow) * self.opt.lambda_tv
 
         if self.opt.dataset_mode == 'aligned_with_C':
-            self.loss_G_flow = self.criterionL1(self.fake_B_flow_converted.permute(0,3,1,2)[self.mask],
-                                                self.real_C.permute(0,3,1,2)[self.mask]) * self.opt.lambda_flow
+            self.loss_G_flow = self.criterionL1(self.fake_B_flow_converted.permute(0,3,1,2)[self.mask[:,:2,:,:]],
+                                                self.real_C.permute(0,3,1,2)[self.mask[:,:2,:,:]]) * self.opt.lambda_flow
         else:
             self.loss_G_flow = 0. * self.loss_TV
         # Second, G(A) = B
