@@ -1,8 +1,8 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/pvhm256/ \
-    --dataset_mode aligned_with_C\
-    --name ftae_flow_rect_grid_tv_pvhm\
+    --dataroot ~/data/view_synthesis/pvhm_test/ \
+    --dataset_mode aligned\
+    --name debug\
     --model ftae_flow \
     --identity 0 \
     --save_epoch_freq 50 \
@@ -12,9 +12,9 @@ python train.py\
     --fineSize 128 \
     --no_flip\
     --display_freq 100 \
-    --display_port 8099 \
+    --display_port 8098 \
     --no_dropout \
-    --lr 0.00006 \
+    --lr 0.00002 \
     --niter 100 \
     --niter_decay 100 \
     --lambda_gan 0 \
@@ -22,11 +22,9 @@ python train.py\
     --nz 200\
     --rectified\
     --add_grid\
-    --lambda_tv 0\
-    --lambda_flow 0
-
-
-#        --which_direction BtoA\
+    --lambda_tv 1\
+    --lambda_flow 0 \
+    --which_direction BtoA\
 
 
 

@@ -15,7 +15,7 @@ import torchvision
 ### Feature Transformer Network
 ### http://pytorch.org/tutorials/intermediate/spatial_transformer_tutorial.html
 def rotation_tensor(yaw, n_comps, gpu):
-    yaw = yaw.expand(n_comps,1)
+    yaw = yaw.expand(n_comps,1,1)
     one = Variable(torch.ones(n_comps, 1, 1).cuda(gpu, async=True))
     zero = Variable(torch.zeros(n_comps, 1, 1).cuda(gpu, async=True))
 
@@ -168,8 +168,6 @@ class FTAEModel(BaseModel):
         input_A = input['A' if AtoB else 'B']
         input_B = input['B' if AtoB else 'A']
 
-        self.b_path = input['B_paths'][0]
-        self.c_path = input['C_paths'][0]
 
         # input_A = input['B']
         # input_B = flip(input_A,3)
@@ -181,19 +179,26 @@ class FTAEModel(BaseModel):
         self.input_B = input_B
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
-        input_C = input['C']
-        if len(self.gpu_ids) > 0:
-            self.input_C = input_C.cuda(self.gpu_ids[0], async=True)
+        if self.opt.dataset_mode == 'aligned_with_C':
+            input_C = input['C']
+            if len(self.gpu_ids) > 0:
+                self.input_C = input_C.cuda(self.gpu_ids[0], async=True)
 
-        # self.mask = self.input_B<1.0
-        # self.mask = self.mask.all(keepdim=True)
-        # print self.mask
+
+        self.mask = torch.sum(self.input_B, dim=1)
+        self.mask = (self.mask < 3.0).unsqueeze(1)
+        self.mask = self.mask.expand(self.input_B.size())
+
+        self.mask0 = torch.sum(self.input_A, dim=1)
+        self.mask0 = (self.mask0 < 3.0).unsqueeze(1)
+        self.mask0 = self.mask0.expand(self.input_A.size())
 
     def forward(self):
         add_grid = self.opt.add_grid
         rectified = self.opt.rectified
         self.real_A = Variable(self.input_A)
-        self.real_C = Variable(self.input_C)+self.grid
+        if self.opt.dataset_mode == 'aligned_with_C':
+            self.real_C = Variable(self.input_C)+self.grid
 
         self.fake_B_flow,_ = self.netG(self.real_A, self.yaw)
         self.fake_B_flow_converted = convert_flow(self.fake_B_flow,self.grid,add_grid,rectified)
@@ -214,8 +219,8 @@ class FTAEModel(BaseModel):
         self.real_A = Variable(self.input_A, volatile=True)
         self.real_B = Variable(self.input_B, volatile=True)
         self.fake_B_list = []
-        for i in range(10):
-            fake_B_flow,z = self.netG(self.real_A, Variable(torch.Tensor([i/10.*np.pi/4.]).cuda(self.gpu_ids[0], async=True)))
+        for i in range(5):
+            fake_B_flow,z = self.netG(self.real_A, Variable(torch.Tensor([-i/5.*np.pi/4.]).cuda(self.gpu_ids[0], async=True)))
             fake_B = torch.nn.functional.grid_sample(self.real_A, convert_flow(fake_B_flow,self.grid,add_grid,rectified))
             self.fake_B_list.append(fake_B)
         # np.save(os.path.join("./results/features", os.path.basename(self.image_paths[0]) ), z.data.cpu().numpy())
@@ -251,11 +256,14 @@ class FTAEModel(BaseModel):
         self.loss_TV = self.criterionTV(self.fake_B_flow) * self.opt.lambda_tv
         self.loss_TV_2 = self.criterionTV(self.fake_B_0_flow) * self.opt.lambda_tv
 
-        self.loss_G_flow = self.criterionL1(self.fake_B_flow_converted.permute(0,3,1,2), self.real_C.permute(0,3,1,2)) * self.opt.lambda_flow
-
+        if self.opt.dataset_mode == 'aligned_with_C':
+            self.loss_G_flow = self.criterionL1(self.fake_B_flow_converted.permute(0,3,1,2)[self.mask],
+                                                self.real_C.permute(0,3,1,2)[self.mask]) * self.opt.lambda_flow
+        else:
+            self.loss_G_flow = 0. * self.loss_TV
         # Second, G(A) = B
-        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
-        self.loss_G_L1_2 = self.criterionL1(self.fake_B_0, self.real_A) * self.opt.lambda_A
+        self.loss_G_L1 = self.criterionL1(self.fake_B[self.mask], self.real_B[self.mask]) * self.opt.lambda_A
+        self.loss_G_L1_2 = self.criterionL1(self.fake_B_0[self.mask0], self.real_A[self.mask0]) * self.opt.lambda_A
 
         self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_L1_2 \
                       + self.loss_TV + self.loss_TV_2 + self.loss_G_flow
@@ -294,8 +302,13 @@ class FTAEModel(BaseModel):
 
         fake_B_0 = util.tensor2im(self.fake_B_0.data)
         fake_B_18 = util.tensor2im(self.fake_B_18.data)
+
         flow = util.tensor2im(self.fake_B_flow_converted.permute(0,3,1,2).data)
-        real_flow = util.tensor2im(self.real_C.permute(0,3,1,2).data)
+        if self.opt.dataset_mode == 'aligned_with_C':
+            real_flow = util.tensor2im(self.real_C.permute(0,3,1,2).data)
+        else:
+            real_flow = util.tensor2im(self.fake_B_flow_converted.permute(0, 3, 1, 2).data)
+
         return OrderedDict([('real_A', real_A), ('fake_B_36', fake_B), ('real_B', real_B),
                             ('fake_B_0', fake_B_0), ('fake_B_18', fake_B_18),
                             ('flow',flow), ('real_flow', real_flow)])
@@ -329,5 +342,5 @@ def convert_flow(flow, grid, add_grid=False, rectified=False):
             grid_new = torch.cat([grid[:b,:,:,0].unsqueeze(3),Variable(torch.zeros(b,h,w,1).cuda()),], dim=3)
             flow_ret += grid_new
     elif add_grid:
-        flow_ret += grid
+        flow_ret = flow_ret + grid
     return flow_ret
