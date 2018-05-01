@@ -3,7 +3,7 @@ epoch=$1
 
 python test.py \
 	--dataroot ~/data/view_synthesis/pvhm_test/    \
-	--name ftae_flow_rect_grid_tv_bilinear \
+	--name debug \
 	--dataset_mode aligned_with_C \
 	--model ftae_flow\
     --phase test        		   \
@@ -17,6 +17,8 @@ python test.py \
     --nz 200\
     --rectified\
     --add_grid\
-    --which_direction BtoA\
+    --norm batch\
+    --which_direction BtoA
 
-#    --which_direction BtoA
+#    --which_direction BtoA\
+

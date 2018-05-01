@@ -1,8 +1,8 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/pvhm_test/ \
-    --dataset_mode aligned\
-    --name debug\
+    --dataroot ~/data/view_synthesis/pvhm256/ \
+    --dataset_mode aligned_with_C\
+    --name human\
     --model ftae_flow \
     --identity 0 \
     --save_epoch_freq 50 \
@@ -16,15 +16,18 @@ python train.py\
     --no_dropout \
     --lr 0.00002 \
     --niter 100 \
-    --niter_decay 100 \
     --lambda_gan 0 \
     --batchSize 16 \
     --nz 200\
     --rectified\
     --add_grid\
     --lambda_tv 1\
-    --lambda_flow 0 \
-    --which_direction BtoA\
+    --lambda_flow 10\
+    --norm batch
+
+#    --niter_decay 100 \
+
+    #--which_direction BtoA\
 
 
 

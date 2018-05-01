@@ -23,6 +23,7 @@ python train.py\
     --add_grid\
     --rectified\
 
+
 #    --upsample bilinear
 
 
