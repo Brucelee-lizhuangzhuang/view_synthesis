@@ -106,7 +106,7 @@ class FTAEModel(BaseModel):
     def initialize(self, opt):
         BaseModel.initialize(self, opt)
         self.isTrain = opt.isTrain
-        self.yaw = Variable(torch.Tensor([-np.pi/4.]).cuda(opt.gpu_ids[0], async=True), requires_grad=False)
+        self.yaw = Variable(torch.Tensor([np.pi/4.]).cuda(opt.gpu_ids[0], async=True), requires_grad=False)
         # load/define networks
         self.netG = FTAE(opt.input_nc,opt.ngf, n_layers=int(np.log2(opt.fineSize)), upsample=opt.upsample,
                          norm_layer = networks.get_norm_layer(norm_type=opt.norm),
@@ -209,7 +209,7 @@ class FTAEModel(BaseModel):
         self.fake_B_flow_converted0 = convert_flow(self.fake_B_0_flow,self.grid,add_grid,rectified)
         self.fake_B_0 = torch.nn.functional.grid_sample(self.real_A, self.fake_B_flow_converted0)
 
-        self.fake_B_18_flow,_ = self.netG(self.real_A, Variable(torch.Tensor([-np.pi/8.]).cuda(self.gpu_ids[0], async=True)))
+        self.fake_B_18_flow,_ = self.netG(self.real_A, Variable(torch.Tensor([np.pi/8.]).cuda(self.gpu_ids[0], async=True)))
         self.fake_B_18 = torch.nn.functional.grid_sample(self.real_A, convert_flow(self.fake_B_18_flow,self.grid,add_grid,rectified))
 
     # no backprop gradients
