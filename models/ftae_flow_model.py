@@ -354,5 +354,5 @@ def convert_flow(flow, grid, add_grid=False, rectified=False):
             grid_new = torch.cat([grid[:b,:,:,0].unsqueeze(3),Variable(torch.zeros(b,h,w,1).cuda()),], dim=3)
             flow_ret += grid_new
     elif add_grid:
-        flow_ret = flow_ret + grid
+        flow_ret = flow_ret + grid[:b,:,:,1]
     return flow_ret
