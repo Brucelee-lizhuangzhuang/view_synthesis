@@ -220,7 +220,7 @@ class FTAEModel(BaseModel):
         self.real_B = Variable(self.input_B, volatile=True)
         self.fake_B_list = []
         for i in range(10):
-            fake_B_flow,z = self.netG(self.real_A, Variable(torch.Tensor([-i/9.*np.pi/4.]).cuda(self.gpu_ids[0], async=True)))
+            fake_B_flow,z = self.netG(self.real_A, Variable(torch.Tensor([i/9.*np.pi/4.]).cuda(self.gpu_ids[0], async=True)))
             fake_B = torch.nn.functional.grid_sample(self.real_A, convert_flow(fake_B_flow,self.grid,add_grid,rectified))
             self.fake_B_list.append(fake_B)
         # np.save(os.path.join("./results/features", os.path.basename(self.image_paths[0]) ), z.data.cpu().numpy())
@@ -280,10 +280,10 @@ class FTAEModel(BaseModel):
 
     def optimize_parameters(self):
         self.forward()
-
-        self.optimizer_D.zero_grad()
-        self.backward_D()
-        self.optimizer_D.step()
+        #
+        # self.optimizer_D.zero_grad()
+        # self.backward_D()
+        # self.optimizer_D.step()
 
         self.optimizer_G.zero_grad()
         self.backward_G()

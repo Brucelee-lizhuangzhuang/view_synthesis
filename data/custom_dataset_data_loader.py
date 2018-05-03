@@ -10,6 +10,9 @@ def CreateDataset(opt):
     elif opt.dataset_mode == 'aligned_with_C':
         from data.aligned_dataset_with_C import AlignedDatasetWithC
         dataset = AlignedDatasetWithC()
+    elif opt.dataset_mode == 'aligned_multi_view':
+        from data.aligned_dataset_multi_view import AlignedDatasetMultiView
+        dataset = AlignedDatasetMultiView()
     elif opt.dataset_mode == 'aligned_depth':
         from data.aligned_dataset_depth import AlignedDatasetDepth
         dataset = AlignedDatasetDepth()

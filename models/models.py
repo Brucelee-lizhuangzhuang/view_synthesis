@@ -34,6 +34,10 @@ def create_model(opt):
         assert(opt.dataset_mode in  ['aligned','aligned_with_C'])
         from .image_refine_model import ImageRefineModel
         model = ImageRefineModel()
+    elif opt.model == 'multi_view_flow':
+        assert(opt.dataset_mode in  ['aligned','aligned_with_C','aligned_multi_view'])
+        from .multi_view_model import MultiViewModel
+        model = MultiViewModel()
     elif opt.model == 'unsupervised_depth':
         assert(opt.dataset_mode in  ['aligned','aligned_with_C'])
         from .unsupervised_depth_model import UnsupervisedDepthModel
