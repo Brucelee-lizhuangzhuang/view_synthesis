@@ -34,7 +34,6 @@ class AlignedDatasetMultiView(BaseDataset):
         if self.opt.phase == 'test':
             index += int(len(self.paths[int(self.nv/2)])*0.8)+1
         A = self.paths[int(self.center_view)][index]
-        print index
         idx_view = np.random.randint(0, self.nv)
 
         A = Image.open(A).convert('RGB')
