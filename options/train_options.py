@@ -28,7 +28,7 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--identity', type=float, default=0.5, help='use identity mapping. Setting identity other than 1 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set optidentity = 0.1')
         self.parser.add_argument('--lambda_tv', type=float, default=0, help='use total variation loss')
 
-        self.parser.add_argument('--lambda_kl', type=float, default=0.01, help='weight for KL loss')
+        self.parser.add_argument('--lambda_kl', type=float, default=0, help='weight for KL loss 0.01')
         self.parser.add_argument('--lambda_z', type=float, default=0, help='weight for z L1 loss')
         self.parser.add_argument('--lambda_class', type=float, default=0, help='weight for class L1 loss')
         self.parser.add_argument('--lambda_flow', type=float, default=0, help='weight for class L1 loss')

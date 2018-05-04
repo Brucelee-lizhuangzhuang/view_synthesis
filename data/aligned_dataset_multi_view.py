@@ -31,8 +31,10 @@ class AlignedDatasetMultiView(BaseDataset):
 
     def __getitem__(self, index):
 
+        if self.opt.phase == 'test':
+            index += int(len(self.paths[int(self.nv/2)])*0.8)+1
         A = self.paths[int(self.center_view)][index]
-
+        print index
         idx_view = np.random.randint(0, self.nv)
 
         A = Image.open(A).convert('RGB')
@@ -72,7 +74,10 @@ class AlignedDatasetMultiView(BaseDataset):
                 'A_paths': self.paths[int(self.nv/2)][index], }
 
     def __len__(self):
-        return len(self.paths[int(self.nv/2)])
+        if self.opt.phase == 'train':
+            return int(len(self.paths[int(self.nv/2)])*0.8)
+        else:
+            return int(len(self.paths[int(self.nv/2)])*0.2)
 
     def name(self):
         return 'AlignedDatasetMultiView'

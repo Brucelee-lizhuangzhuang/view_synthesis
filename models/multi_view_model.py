@@ -29,9 +29,11 @@ def rotation_tensor(yaw, n_comps, gpu):
 
 class FTAE(nn.Module):
     def __init__(self, input_nc, ndf=64, n_layers=7, upsample='basic',
-                 norm_layer=None, nl_layer=None, gpu_ids=[],nz=200):
+                 norm_layer=None, nl_layer=None, gpu_ids=[],nz=200, use_vae=False):
         super(FTAE, self).__init__()
         self.gpu_ids = gpu_ids
+        self.use_vae = use_vae
+
 
         kw, padw = 4, 1
         enc = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nl_layer()]
@@ -49,6 +51,8 @@ class FTAE(nn.Module):
         # sequence += [nn.AvgPool2d(8)]
         self.enc = nn.Sequential(*enc)
         self.fc = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz*3), nn.LeakyReLU(0.2, True)])
+        if use_vae:
+            self.fc_var = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3), nn.LeakyReLU(0.2, True)])
         self.fc2 = nn.Sequential(*[nn.Linear(nz*3, ndf * nf_mult), nn.LeakyReLU(0.2, True)])
 
         deconv = []
@@ -63,17 +67,30 @@ class FTAE(nn.Module):
         deconv += [nn.Tanh()]
 
         self.deconv = nn.Sequential(*deconv)
-
         self.nz = nz
 
     def forward(self, x, yaw, Tz=0):
         z_conv = self.enc(x)
-        z_fc = self.fc(z_conv.view(x.size(0),-1) ).view(x.size(0), self.nz, 3)
-        z_fc = F.tanh(z_fc)
+        if self.use_vae:
+            mu = self.fc(z_conv.view(x.size(0),-1) )
+            logvar = self.fc_var(z_conv.view(x.size(0),-1) )
+            std = logvar.mul(0.5).exp_()
+            eps = get_z_random(std.size(0), std.size(1), 'gauss')
+            z_fc = eps.mul(std).add_(mu).view(x.size(0), self.nz, 3)
+            self.mu = mu
+            self.logvar = logvar
+        else:
+            z_fc = self.fc(z_conv.view(x.size(0),-1) ).view(x.size(0), self.nz, 3)
+        # z_fc = F.tanh(z_fc)
 
         R = rotation_tensor(yaw, x.size(0), self.gpu_ids[0])
+        z_rot = z_fc.bmm(R) # + T
+        z_rot_fc = self.fc2(z_rot.view(x.size(0), self.nz*3))
 
-
+        output = self.deconv(z_rot_fc.view(z_conv.size(0),z_conv.size(1),z_conv.size(2),z_conv.size(3)))
+        return output
+    def get_mu_var(self):
+        return self.mu,self.logvar
         # R = np.array(
         #    [ [np.cos(yaw),-np.sin(yaw), 0],
         #     [np.sin(yaw), np.cos(yaw), 0],
@@ -95,9 +112,7 @@ class FTAE(nn.Module):
         # T = np.array([Tz,0,0])
         # R = Variable(torch.from_numpy(R.astype(np.float32))).cuda().expand(x.size(0),3,3)
         # T = Variable(torch.from_numpy(T.astype(np.float32))).cuda().expand(x.size(0),self.nz,3)
-        z_rot = z_fc.bmm(R) # + T
-        z_rot_fc = self.fc2(z_rot.view(x.size(0), self.nz*3))
-        return self.deconv(z_rot_fc.view(z_conv.size(0),z_conv.size(1),z_conv.size(2),z_conv.size(3))), z_fc
+
 
 class MultiViewModel(BaseModel):
     def name(self):
@@ -110,7 +125,7 @@ class MultiViewModel(BaseModel):
         # load/define networks
         self.netG = FTAE(opt.input_nc,opt.ngf, n_layers=int(np.log2(opt.fineSize)), upsample=opt.upsample,
                          norm_layer = networks.get_norm_layer(norm_type=opt.norm),
-                         nl_layer=networks.get_non_linearity(layer_type='lrelu'), gpu_ids=opt.gpu_ids, nz=opt.nz)
+                         nl_layer=networks.get_non_linearity(layer_type='lrelu'), gpu_ids=opt.gpu_ids, nz=opt.nz, use_vae=opt.lambda_kl>0)
         if len(opt.gpu_ids) > 0:
             self.netG.cuda(opt.gpu_ids[0])
         networks.init_weights(self.netG, init_type="normal")
@@ -208,17 +223,19 @@ class MultiViewModel(BaseModel):
 
         b = self.input_Yaw.size(0)
 
-        self.fake_B_flow,_ = self.netG(self.real_A, self.real_Yaw)
+        self.fake_B_flow = self.netG(self.real_A, self.real_Yaw)
+        if self.opt.lambda_kl > 0:
+            self.mu,self.logvar = self.netG.get_mu_var()
+
         self.fake_B_flow_converted = convert_flow(self.fake_B_flow,self.grid,add_grid,rectified)
         self.fake_B = torch.nn.functional.grid_sample(self.real_A, self.fake_B_flow_converted)
         self.real_B = Variable(self.input_B)
 
-        self.fake_B_0_flow,_  = self.netG(self.real_A, self.view0[:b,:])
+        self.fake_B_0_flow  = self.netG(self.real_A, self.view0[:b,:])
         self.fake_B_flow_converted0 = convert_flow(self.fake_B_0_flow,self.grid,add_grid,rectified)
         self.fake_B_0 = torch.nn.functional.grid_sample(self.real_A, self.fake_B_flow_converted0)
 
-
-        self.fake_B_18_flow,_ = self.netG(self.real_A, self.view1[:b,:])
+        self.fake_B_18_flow = self.netG(self.real_A, self.view1[:b,:])
         self.fake_B_18 = torch.nn.functional.grid_sample(self.real_A, convert_flow(self.fake_B_18_flow,self.grid,add_grid,rectified))
 
     # no backprop gradients
@@ -228,8 +245,8 @@ class MultiViewModel(BaseModel):
         self.real_A = Variable(self.input_A, volatile=True)
         self.real_B = Variable(self.input_B, volatile=True)
         self.fake_B_list = []
-        for i in range(10):
-            fake_B_flow,z = self.netG(self.real_A, Variable(torch.Tensor([-1/4.*np.pi + 1/2.*np.pi*i/9 ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0))
+        for i in range(20):
+            fake_B_flow,z = self.netG(self.real_A, Variable(torch.Tensor([-1/4.*np.pi + 1/2.*np.pi*i/19 ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0))
             fake_B = torch.nn.functional.grid_sample(self.real_A, convert_flow(fake_B_flow,self.grid,add_grid,rectified))
             self.fake_B_list.append(fake_B)
         # np.save(os.path.join("./results/features", os.path.basename(self.image_paths[0]) ), z.data.cpu().numpy())
@@ -277,13 +294,19 @@ class MultiViewModel(BaseModel):
         else:
             self.loss_G_flow0 = 0. * self.loss_TV
 
+        # KL loss
+        if self.opt.lambda_kl > 0:
+            kl_element = self.mu.pow(2).add_(self.logvar.exp()).mul_(-1).add_(1).add_(self.logvar)
+            self.loss_kl = torch.sum(kl_element).mul_(-0.5) * self.opt.lambda_kl
+        else:
+            self.loss_kl = 0. * self.loss_TV
 
         # Second, G(A) = B
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
         self.loss_G_L1_2 = self.criterionL1(self.fake_B_0, self.real_A) * self.opt.lambda_A * 0
 
         self.loss_G = self.loss_G_GAN + self.loss_G_L1 + self.loss_G_L1_2 \
-                      + self.loss_TV + self.loss_TV_2 + self.loss_G_flow + self.loss_G_flow0
+                      + self.loss_TV + self.loss_TV_2 + self.loss_G_flow + self.loss_G_flow0 + self.loss_kl
 
         self.loss_G.backward()
 
@@ -304,6 +327,7 @@ class MultiViewModel(BaseModel):
                             ('G_L1_2', self.loss_G_L1_2.data[0]),
                             ('F_L1', self.loss_G_flow.data[0]),
                             ('F_L10', self.loss_G_flow0.data[0]),
+                            ('KL', self.loss_kl.data[0]),
                             ('TV', self.loss_TV.data[0]),
                             ('TV2', self.loss_TV_2.data[0])
                             ])
@@ -362,3 +386,11 @@ def convert_flow(flow, grid, add_grid=False, rectified=False):
     elif add_grid:
         flow_ret = flow_ret + grid[:b,:,:,:]
     return flow_ret
+
+def get_z_random(batchSize, nz, random_type='gauss'):
+    if random_type == 'uni':
+        z = torch.rand(batchSize, nz) * 2.0 - 1.0
+    elif random_type == 'gauss':
+        z = torch.randn(batchSize, nz)
+    z = Variable(z.cuda())
+    return z

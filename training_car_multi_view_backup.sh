@@ -11,7 +11,7 @@ python train.py\
     --display_freq 5 \
     --display_port 8098 \
     --no_dropout \
-    --lr 0.00006 \
+    --lr 0.0002 \
     --niter 200 \
     --niter_decay 200 \
     --lambda_gan 0 \
@@ -20,8 +20,8 @@ python train.py\
     --lambda_tv 0\
     --lambda_flow 0\
     --norm batch\
-    --lambda_kl 0.01
 
+#    --lambda_kl 0.01
 #    --add_grid\
 
 #    --upsample bilinear
