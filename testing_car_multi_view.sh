@@ -3,19 +3,20 @@ epoch=$1
 
 python test.py \
 	--dataroot ~/data/view_synthesis/car_multi_view/    \
-	--name car_multi_view_256 \
+	--name car_multi_view_concat \
 	--dataset_mode aligned_multi_view \
 	--model multi_view_flow\
     --phase test        		   \
 	--no_dropout                       \
 	--which_epoch $epoch               \
-    --loadSize 256	                   \
-    --fineSize 256			   \
+    --loadSize 128	                   \
+    --fineSize 128			   \
  	--how_many 60\
     --no_flip \
     --serial_batch\
     --nz 200\
     --norm batch\
+    --concat_grid
 
 #    --add_grid\
 

@@ -20,9 +20,9 @@ class AlignedDatasetMultiView(BaseDataset):
             self.dirs.append(os.path.join(opt.dataroot, "%d" %i) )
             self.paths.append(sorted(make_dataset(self.dirs[i]) ) )
 
-        if opt.phase == 'test':
-            self.dirs[self.center_view] = os.path.join(opt.dataroot, "test")
-            self.paths.append(sorted(make_dataset(self.dirs[self.center_view])))
+        # if opt.phase == 'test':
+        #     self.dirs[self.center_view] = os.path.join(opt.dataroot, "test")
+        #     self.paths.append(sorted(make_dataset(self.dirs[self.center_view])))
 
         # self.dir_C  = os.path.join(opt.dataroot, opt.phase+"C")
         # self.C_paths = sorted(make_dataset_label(self.dir_C))
@@ -34,7 +34,16 @@ class AlignedDatasetMultiView(BaseDataset):
         if self.opt.phase == 'test':
             index += int(len(self.paths[int(self.nv/2)])*0.8)+1
         A = self.paths[int(self.center_view)][index]
-        idx_view = np.random.randint(0, self.nv)
+
+        if self.opt.phase == 'train':
+            if self.opt.ignore_center:
+                idx_view = np.random.randint(0, self.nv - 1)
+                if idx_view == self.center_view:
+                    idx_view = self.nv - 1
+            else:
+                idx_view = np.random.randint(0, self.nv)
+        else:
+            idx_view = np.random.randint(0, self.nv)
 
         A = Image.open(A).convert('RGB')
         A = self.transform(A)

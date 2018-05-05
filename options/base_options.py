@@ -51,6 +51,9 @@ class BaseOptions():
 
         self.parser.add_argument('--add_grid', action='store_true', help='adding grid')
         self.parser.add_argument('--rectified', action='store_true', help='adding grid')
+        self.parser.add_argument('--use_vae', action='store_true', help='adding grid')
+        self.parser.add_argument('--concat_grid', action='store_true', help='adding grid')
+        self.parser.add_argument('--use_pyramid', action='store_true', help='adding grid')
 
 
         self.initialized = True

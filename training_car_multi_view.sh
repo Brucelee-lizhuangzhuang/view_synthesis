@@ -2,7 +2,7 @@
 python train.py\
     --dataroot ~/data/view_synthesis/car_multi_view/ \
     --dataset_mode aligned_multi_view\
-    --name car_multi_view_vae\
+    --name car_multi_view_prymaid\
     --model multi_view_flow \
     --save_epoch_freq 50 \
     --loadSize 128 \
@@ -11,7 +11,7 @@ python train.py\
     --display_freq 5 \
     --display_port 8098 \
     --no_dropout \
-    --lr 0.00006 \
+    --lr 0.0002 \
     --niter 200 \
     --niter_decay 200 \
     --lambda_gan 0 \
@@ -20,7 +20,14 @@ python train.py\
     --lambda_tv 0\
     --lambda_flow 0\
     --norm batch\
-    --lambda_kl 0.01
+    --concat_grid\
+
+
+#    --use_pyramid
+
+#    --ignore_center
+
+#    --lambda_kl 0.01
 
 #    --add_grid\
 
