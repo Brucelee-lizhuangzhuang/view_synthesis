@@ -104,7 +104,7 @@ def pose_vec2mat(vec, rotation_mode='euler'):
     return transform_mat
 
 
-def inverse_warp(img, depth, pose, intrinsics, intrinsics_inv, rotation_mode='euler', padding_mode='zeros'):
+def inverse_warp(img, depth, pose, distance, intrinsics, intrinsics_inv, rotation_mode='euler', padding_mode='zeros'):
     """
     Inverse warp a source image to the target image plane.
     Args:
@@ -131,12 +131,12 @@ def inverse_warp(img, depth, pose, intrinsics, intrinsics_inv, rotation_mode='eu
     # Get projection matrix for tgt camera frame to source pixel frame
     # proj_cam_to_src_pixel = intrinsics.bmm(pose_mat)  # [B, 3, 4]
 
-    src_pixel_coords = cam2pixel(cam_coords, pose_mat[:, :, :3], intrinsics, padding_mode)  # [B,H,W,2]
+    src_pixel_coords = cam2pixel(cam_coords, pose_mat[:, :, :3], intrinsics, distance, padding_mode)  # [B,H,W,2]
     # projected_img = torch.nn.functional.grid_sample(img, src_pixel_coords, padding_mode=padding_mode)
     return src_pixel_coords
 
 
-def cam2pixel(cam_coords, proj_c2p_rot, intrinsics, padding_mode):
+def cam2pixel(cam_coords, proj_c2p_rot, intrinsics, distance, padding_mode):
     """Transform coordinates in the camera frame to the pixel frame.
     Args:
         cam_coords: pixel coordinates defined in the first camera coordinates system -- [B, 4, H, W]
@@ -150,7 +150,7 @@ def cam2pixel(cam_coords, proj_c2p_rot, intrinsics, padding_mode):
 
     # 3D WORLD -> 3D BODY
     delta0 = Variable(torch.zeros(b, 1, h * w)).type_as(cam_coords_flat_old)
-    delta4 = Variable(4 * torch.ones(b, 1, h * w)).type_as(cam_coords_flat_old)
+    delta4 = Variable(distance * torch.ones(b, 1, h * w)).type_as(cam_coords_flat_old)
     delta = torch.stack((delta0, delta0, delta4), dim=1).view(b, 3, -1)  # [1, 3, H, W]
     cam_coords_flat = cam_coords_flat_old - delta
 

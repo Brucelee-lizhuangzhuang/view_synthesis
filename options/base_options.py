@@ -55,6 +55,10 @@ class BaseOptions():
         self.parser.add_argument('--concat_grid', action='store_true', help='adding grid')
         self.parser.add_argument('--use_pyramid', action='store_true', help='adding grid')
 
+        self.parser.add_argument('--nl_enc', type=str, default='lrelu', help='selects model to use for netG')
+        self.parser.add_argument('--nl_dec', type=str, default='lrelu', help='selects model to use for netG')
+        self.parser.add_argument('--n_bilinear_layers', type=int, default=0, help='#latent vector')
+        self.parser.add_argument('--random_AB', action='store_true', help='adding grid')
 
         self.initialized = True
 

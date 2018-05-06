@@ -2,14 +2,14 @@
 python train.py\
     --dataroot ~/data/view_synthesis/car_multi_view/ \
     --dataset_mode aligned_multi_view\
-    --name car_multi_view_vae1\
+    --name car_multi_view_concat\
     --model multi_view_flow \
     --save_epoch_freq 50 \
     --loadSize 128 \
     --fineSize 128 \
     --no_flip\
     --display_freq 5 \
-    --display_port 8099 \
+    --display_port 8098 \
     --no_dropout \
     --lr 0.0002 \
     --niter 200 \
@@ -20,12 +20,7 @@ python train.py\
     --lambda_tv 0\
     --lambda_flow 0\
     --norm batch\
-    --use_vae\
-    --lambda_kl 0.01
-
-#    --concat_grid\
-
-#    --nl_dec relu
+    --concat_grid\
 
 #    --use_pyramid\
 
