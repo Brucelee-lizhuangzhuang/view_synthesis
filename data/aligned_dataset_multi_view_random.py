@@ -32,16 +32,15 @@ class AlignedDatasetMultiView(BaseDataset):
 
     def __getitem__(self, index):
 
+
         if self.opt.phase == 'test':
             index += int(len(self.paths[int(self.nv/2)])*self.train_split)+1
 
         idx_A = np.random.randint(0, self.nv - 1)
         idx_B = np.random.randint(0, self.nv - 1)
         choices = []
-        if idx_B >= 2: choices.append(idx_B - 1)
-        if idx_B >= 3: choices.append(idx_B - 2)
-
-        if idx_B <= self.nv-1 : choices.append(idx_B + 1)
+        if idx_B >= 1: choices.append(-1)
+        if idx_B <= self.nv-1 : choices.append(1)
         idx_C = idx_B + np.random.choice(choices)
 
         if self.opt.phase == 'test':
@@ -49,12 +48,16 @@ class AlignedDatasetMultiView(BaseDataset):
             idx_B = 2
             idx_C = 2
 
+
+
+
         A = Image.open(self.paths[idx_A][index]).convert('RGB')
         A = self.transform(A)
         B = Image.open(self.paths[idx_B][index]).convert('RGB')
         B = self.transform(B)
         C = Image.open(self.paths[idx_C][index]).convert('RGB')
         C = self.transform(C)
+
 
         if self.opt.which_direction == 'BtoA':
             input_nc = self.opt.output_nc
