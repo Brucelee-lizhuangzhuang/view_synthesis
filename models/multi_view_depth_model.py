@@ -79,7 +79,7 @@ class FTAE_pyramid(nn.Module):
         self.nz = nz
 
 
-    def forward(self, x, yaw, Tz=0 ):
+    def forward(self, x, yaw, pose, Tz=0 ):
         z_conv = self.enc(x)
         if self.use_vae:
             mu = self.fc(z_conv.view(x.size(0),-1) )
@@ -100,15 +100,35 @@ class FTAE_pyramid(nn.Module):
         z_rot = z_fc.bmm(R) # + T
         z_rot_fc = self.fc2(z_rot.view(x.size(0), self.nz*3))
 
-        flows = []
+        depths = []
+        y_list = []
         output = self.deconv_layers[0](z_rot_fc.view(z_conv.size(0),z_conv.size(1),z_conv.size(2),z_conv.size(3)))
-        for layers in self.deconv_layers[1:] :
+
+        scale = 2
+        b = x.size(0)
+        dist = 2
+        for i,layers in enumerate(self.deconv_layers[1:]) :
 
             output = layers(output)
-            flows.append( F.tanh(output[:,:1,:,:]) )
-            # print output.size()
+            depth = F.tanh(output[:,:1,:,:])
+            # depths.append( F.tanh(output[:,:1,:,:]) )
+            scale *= 2
+            if i < 4:
+                continue
+            x_downsampled = F.avg_pool2d(x, int(x.size(2)/scale))
+            intrinsics = np.array(
+                [scale / 32. * 60, 0., scale / 2., \
+                 0., scale / 32. * 60, scale / 2., \
+                 0., 0., 1.]).reshape((3, 3))
+            intrinsics_inv = np.linalg.inv(intrinsics)
+            intrinsics = Variable(torch.from_numpy(intrinsics.astype(np.float32)).cuda()).unsqueeze(0).expand(b, 3,3)
+            intrinsics_inv = Variable(torch.from_numpy(intrinsics_inv.astype(np.float32)).cuda()).unsqueeze(0).expand(b, 3, 3)
+            flow_converted = inverse_warp(x_downsampled, depth + dist, pose, dist,
+                                          intrinsics, intrinsics_inv)
+            y_downsampled = F.grid_sample(x_downsampled, flow_converted)
+            y_list.append(y_downsampled)
 
-        return flows
+        return y_list, depth, flow_converted
 
 
     def get_mu_var(self):
@@ -158,7 +178,7 @@ class FTAE(nn.Module):
         else:
             deconv += networks.upsampleLayer(ndf, 1, upsample='basic')
 
-        deconv += [nn.Tanh()]
+        # deconv += [nn.Tanh()]
 
         self.deconv = nn.Sequential(*deconv)
         self.nz = nz
@@ -310,7 +330,16 @@ class MultiViewDepthModel(BaseModel):
         #
         self.maskA = torch.sum(self.input_A, dim=1)
         self.maskA = (self.maskA >= 3.0).unsqueeze(1)
-        self.maskA = self.maskA.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+
+        #
+        self.maskB_fg = torch.sum(self.input_B, dim=1)
+        self.maskB_fg = (self.maskB_fg < 3.0).unsqueeze(1)
+        self.maskB_fg = self.maskB_fg.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        #
+        self.maskA_fg = torch.sum(self.input_A, dim=1)
+        self.maskA_fg = (self.maskA_fg < 3.0).unsqueeze(1)
+        self.maskA_fg = self.maskA_fg.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
 
         self.input_A[self.maskA] = 0.
         self.input_B[self.maskB] = 0.
@@ -343,25 +372,9 @@ class MultiViewDepthModel(BaseModel):
             self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
 
         else:
-            self.real_B_pyramid = []
-            self.fake_B_pyramid = []
-            depth_pyramid = self.netG(real_A_grid, self.real_Yaw, self.grid)+dist
-            real_A_downsampled = self.real_A
-            real_B_downsampled = self.real_B
+            self.fake_B_pyramid, self.depth, self.fake_B_flow_converted = self.netG(real_A_grid, self.real_Yaw, pose)
 
-
-            for depth in reversed(depth_pyramid[-3:]):
-                self.real_B_pyramid.append(real_B_downsampled)
-                flow_converted = inverse_warp(real_A_downsampled, depth, pose, dist,
-                                                          self.intrinsics[:b, :, :], self.intrinsics_inv[:b, :, :])
-                self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
-                self.fake_B_pyramid.append(torch.nn.functional.grid_sample(real_A_downsampled, flow_converted))
-                real_A_downsampled = F.avg_pool2d(real_A_downsampled,2)
-                real_B_downsampled = F.avg_pool2d(real_B_downsampled,2)
-
-            self.fake_B_flow = depth_pyramid[-1]
-            self.fake_B_flow_converted = convert_flow(self.fake_B_flow, self.grid, add_grid, rectified)
-            self.fake_B = self.fake_B_pyramid[0]
+            self.fake_B = self.fake_B_pyramid[-1]
 
         if self.opt.lambda_kl > 0:
             self.mu,self.logvar = self.netG.get_mu_var()
@@ -402,13 +415,13 @@ class MultiViewDepthModel(BaseModel):
         # self.loss_G_GAN = self.opt.lambda_gan * self.criterionGAN(pred_fake, True)
         # Total variation loss
 
-        self.loss_TV = self.criterionTV(self.fake_B_flow) * self.opt.lambda_tv
+        self.loss_TV = self.criterionTV(self.depth) * self.opt.lambda_tv
 
-        if self.opt.lambda_flow > 0:
-            self.loss_G_flow = self.criterionL1(self.fake_B_flow_converted.permute(0,3,1,2)[self.mask],
-                                                self.real_C.permute(0,3,1,2)[self.mask]) * self.opt.lambda_flow
+        if self.opt.lambda_depth > 0:
+            self.loss_G_depth = self.criterionL1(self.depth[self.maskB[:,:1,:,:]],
+                                                Variable(-1*torch.ones(self.depth.size()).cuda())[self.maskB[:,:1,:,:]]) * self.opt.lambda_depth
         else:
-            self.loss_G_flow = 0. * self.loss_TV
+            self.loss_G_depth = 0. * self.loss_TV
 
         # KL loss
         if self.opt.lambda_kl > 0:
@@ -419,14 +432,20 @@ class MultiViewDepthModel(BaseModel):
 
         # Second, G(A) = B
         if not self.opt.use_pyramid:
+            self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
             self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
+
         else:
+            self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
+
             self.loss_G_L1 = 0
-            for fake_B, real_B in zip(self.fake_B_pyramid, self.real_B_pyramid):
-                self.loss_G_L1 += self.criterionL1(fake_B, real_B) * self.opt.lambda_A / len(self.real_B_pyramid)
+            real_B_downsampled = self.real_B
+            for fake_B in reversed(self.fake_B_pyramid):
+                self.loss_G_L1 += self.criterionL1(fake_B, real_B_downsampled) * self.opt.lambda_A / len(self.fake_B_pyramid)
+                real_B_downsampled = F.avg_pool2d(real_B_downsampled,2)
 
         self.loss_G = self.loss_G_L1 \
-                      + self.loss_TV + self.loss_G_flow + self.loss_kl
+                      + self.loss_TV + self.loss_G_depth + self.loss_kl #+ self.loss_G_L1_masked
 
         self.loss_G.backward()
 
@@ -443,7 +462,8 @@ class MultiViewDepthModel(BaseModel):
 
     def get_current_errors(self):
         return OrderedDict([('G_L1', self.loss_G_L1.data[0]),
-                            ('F_L1', self.loss_G_flow.data[0]),
+                            ('G_L1_masked', self.loss_G_L1_masked.data[0]),
+                            ('F_L1', self.loss_G_depth.data[0]),
                             ('KL', self.loss_kl.data[0]),
                             ('TV', self.loss_TV.data[0]),
                             ])
@@ -455,15 +475,10 @@ class MultiViewDepthModel(BaseModel):
         fake_B = util.tensor2im(self.fake_B.data)
         real_B = util.tensor2im(self.real_B.data)
         flow = util.tensor2im(self.fake_B_flow_converted.permute(0,3,1,2).data)
-
-        if self.opt.dataset_mode == 'aligned_with_C':
-            real_flow = util.tensor2im(self.real_C.permute(0,3,1,2).data)
-        else:
-            real_flow = util.tensor2im(self.fake_B_flow_converted.permute(0, 3, 1, 2).data)
-
+        depth = util.tensor2im(self.depth.data)
 
         return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B),
-                            ('flow',flow), ('real_flow', real_flow)])
+                            ('flow',flow), ('depth', depth)])
 
     def get_current_visuals_test(self):
         real_A = util.tensor2im(self.real_A.data)

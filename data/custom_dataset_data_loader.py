@@ -13,6 +13,9 @@ def CreateDataset(opt):
     elif opt.dataset_mode == 'aligned_multi_view':
         from data.aligned_dataset_multi_view import AlignedDatasetMultiView
         dataset = AlignedDatasetMultiView()
+    elif opt.dataset_mode == 'aligned_multi_view_random':
+        from data.aligned_dataset_multi_view_random import AlignedDatasetMultiView
+        dataset = AlignedDatasetMultiView()
     elif opt.dataset_mode == 'aligned_depth':
         from data.aligned_dataset_depth import AlignedDatasetDepth
         dataset = AlignedDatasetDepth()

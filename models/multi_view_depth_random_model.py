@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import itertools
 import torchvision
-
+from projection_layer import inverse_warp
 ### Feature Transformer Network
 ### http://pytorch.org/tutorials/intermediate/spatial_transformer_tutorial.html
 def rotation_tensor(yaw, n_comps, gpu):
@@ -69,9 +69,9 @@ class FTAE_pyramid(nn.Module):
             self.add_module("deconv_%d"%n, deconv_layers[-1])
 
         if n_bilinear_layers > 0:
-            deconv = networks.upsampleLayer(ndf, 2, upsample='bilinear')
+            deconv = networks.upsampleLayer(ndf, 1, upsample='bilinear')
         else:
-            deconv = networks.upsampleLayer(ndf, 2, upsample='basic')
+            deconv = networks.upsampleLayer(ndf, 1, upsample='basic')
         deconv_layers.append(nn.Sequential(*deconv).cuda())
         self.add_module("deconv_%d" % n_layers, deconv_layers[-1])
 
@@ -79,7 +79,7 @@ class FTAE_pyramid(nn.Module):
         self.nz = nz
 
 
-    def forward(self, x, yaw, Tz=0 ):
+    def forward(self, x, yaw, pose, Tz=0 ):
         z_conv = self.enc(x)
         if self.use_vae:
             mu = self.fc(z_conv.view(x.size(0),-1) )
@@ -87,6 +87,9 @@ class FTAE_pyramid(nn.Module):
             std = logvar.mul(0.5).exp_()
             eps = get_z_random(std.size(0), std.size(1), 'gauss')
             z_fc = eps.mul(std).add_(mu).view(x.size(0), self.nz, 3)
+            T = np.array([1, 0, 0])
+            T = Variable(torch.from_numpy(T.astype(np.float32))).cuda().expand(x.size(0), self.nz, 3)
+            z_fc += T
             self.mu = mu
             self.logvar = logvar
         else:
@@ -97,15 +100,35 @@ class FTAE_pyramid(nn.Module):
         z_rot = z_fc.bmm(R) # + T
         z_rot_fc = self.fc2(z_rot.view(x.size(0), self.nz*3))
 
-        flows = []
+        depths = []
+        y_list = []
         output = self.deconv_layers[0](z_rot_fc.view(z_conv.size(0),z_conv.size(1),z_conv.size(2),z_conv.size(3)))
-        for layers in self.deconv_layers[1:] :
+
+        scale = 2
+        b = x.size(0)
+        dist = 2
+        for i,layers in enumerate(self.deconv_layers[1:]) :
 
             output = layers(output)
-            flows.append( F.tanh(output[:,:2,:,:]) )
-            # print output.size()
+            depth = F.tanh(output[:,:1,:,:])
+            # depths.append( F.tanh(output[:,:1,:,:]) )
+            scale *= 2
+            if i < 4:
+                continue
+            x_downsampled = F.avg_pool2d(x, int(x.size(2)/scale))
+            intrinsics = np.array(
+                [scale / 32. * 60, 0., scale / 2., \
+                 0., scale / 32. * 60, scale / 2., \
+                 0., 0., 1.]).reshape((3, 3))
+            intrinsics_inv = np.linalg.inv(intrinsics)
+            intrinsics = Variable(torch.from_numpy(intrinsics.astype(np.float32)).cuda()).unsqueeze(0).expand(b, 3,3)
+            intrinsics_inv = Variable(torch.from_numpy(intrinsics_inv.astype(np.float32)).cuda()).unsqueeze(0).expand(b, 3, 3)
+            flow_converted = inverse_warp(x_downsampled, depth + dist, pose, dist,
+                                          intrinsics, intrinsics_inv)
+            y_downsampled = F.grid_sample(x_downsampled, flow_converted)
+            y_list.append(y_downsampled)
 
-        return flows
+        return y_list, depth, flow_converted
 
 
     def get_mu_var(self):
@@ -151,11 +174,11 @@ class FTAE(nn.Module):
             deconv += [nl_layer_dec()]
 
         if n_bilinear_layers > 0:
-            deconv += networks.upsampleLayer(ndf, 2, upsample='bilinear')
+            deconv += networks.upsampleLayer(ndf, 1, upsample='bilinear')
         else:
-            deconv += networks.upsampleLayer(ndf, 2, upsample='basic')
+            deconv += networks.upsampleLayer(ndf, 1, upsample='basic')
 
-        deconv += [nn.Tanh()]
+        # deconv += [nn.Tanh()]
 
         self.deconv = nn.Sequential(*deconv)
         self.nz = nz
@@ -168,6 +191,9 @@ class FTAE(nn.Module):
             std = logvar.mul(0.5).exp_()
             eps = get_z_random(std.size(0), std.size(1), 'gauss')
             z_fc = eps.mul(std).add_(mu).view(x.size(0), self.nz, 3)
+            T = np.array([1, 0, 0])
+            T = Variable(torch.from_numpy(T.astype(np.float32))).cuda().expand(x.size(0), self.nz, 3)
+            z_fc += T
             self.mu = mu
             self.logvar = logvar
         else:
@@ -175,13 +201,8 @@ class FTAE(nn.Module):
         # z_fc = F.tanh(z_fc)
 
         R = rotation_tensor(yaw, x.size(0), self.gpu_ids[0])
-        T = np.array([1, 0, 0])
-        T = Variable(torch.from_numpy(T.astype(np.float32))).cuda().expand(x.size(0),self.nz,3)
-        z_fc += T
         z_rot = z_fc.bmm(R) # + T
         z_rot_fc = self.fc2(z_rot.view(x.size(0), self.nz*3))
-
-
 
         output = self.deconv(z_rot_fc.view(z_conv.size(0),z_conv.size(1),z_conv.size(2),z_conv.size(3)))
         return output
@@ -191,9 +212,9 @@ class FTAE(nn.Module):
         return self.mu,self.logvar
 
 
-class MultiViewModel(BaseModel):
+class MultiViewDepthModel(BaseModel):
     def name(self):
-        return 'MultiViewModel'
+        return 'MultiViewDepthModel'
 
     def initialize(self, opt):
         BaseModel.initialize(self, opt)
@@ -259,6 +280,17 @@ class MultiViewModel(BaseModel):
         self.grid = self.grid.view(1,self.grid.size(0),self.grid.size(1),self.grid.size(2)).expand(opt.batchSize,opt.fineSize,opt.fineSize,2)
         self.grid = Variable(self.grid)
 
+        intrinsics = np.array(
+            [opt.fineSize / 32. * 60, 0., opt.fineSize/2., \
+             0., opt.fineSize / 32. * 60, opt.fineSize/2., \
+             0., 0., 1.]).reshape((1, 3, 3))
+        intrinsics_inv = np.linalg.inv(np.array(
+            [opt.fineSize / 32. * 60, 0., opt.fineSize / 2., \
+             0., opt.fineSize / 32. * 60, opt.fineSize / 2., \
+             0., 0., 1.]).reshape((3, 3))).reshape((1, 3, 3))
+        self.intrinsics = Variable(torch.from_numpy(intrinsics.astype(np.float32)).cuda()).expand(opt.batchSize,3,3)
+        self.intrinsics_inv = Variable(torch.from_numpy(intrinsics_inv.astype(np.float32)).cuda()).expand(opt.batchSize,3,3)
+
         self.view0 = Variable(torch.Tensor([0]).cuda(self.gpu_ids[0], async=True).view(1,1).expand(opt.batchSize,1))
         self.view1 = Variable(torch.Tensor([np.pi / 4.]).cuda(self.gpu_ids[0], async=True).view(1,1).expand(opt.batchSize,1))
 
@@ -272,33 +304,56 @@ class MultiViewModel(BaseModel):
         AtoB = self.opt.which_direction == 'AtoB'
         input_A = input['A' if AtoB else 'B']
         input_B = input['B' if AtoB else 'A']
-        input_Yaw = input['Yaw']
+        input_C = input['C']
+        input_YawAB = input['YawAB']
+        input_YawCB = input['YawCB']
 
         if len(self.gpu_ids) > 0:
             input_A = input_A.cuda(self.gpu_ids[0], async=True)
             input_B = input_B.cuda(self.gpu_ids[0], async=True)
-            input_Yaw = input_Yaw.cuda(self.gpu_ids[0], async=True)
+            input_C = input_C.cuda(self.gpu_ids[0], async=True)
+
+            input_YawAB = input_YawAB.cuda(self.gpu_ids[0], async=True)
+            input_YawCB = input_YawCB.cuda(self.gpu_ids[0], async=True)
 
         self.input_A = input_A
         self.input_B = input_B
-        self.input_Yaw = input_Yaw
+        self.input_C = input_C
+
+        self.input_YawAB = input_YawAB
+        self.input_YawCB = input_YawCB
+
         # print input_Yaw.size()
 
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
-        if self.opt.dataset_mode == 'aligned_with_C':
-            input_C = input['C']
-            if len(self.gpu_ids) > 0:
-                self.input_C = input_C.cuda(self.gpu_ids[0], async=True)
+        #
+        self.maskB = torch.sum(self.input_B, dim=1)
+        self.maskB = (self.maskB >= 3.0).unsqueeze(1)
+        self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        #
+        self.maskA = torch.sum(self.input_A, dim=1)
+        self.maskA = (self.maskA >= 3.0).unsqueeze(1)
+        self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
 
         #
-        self.mask = torch.sum(self.input_B, dim=1)
-        self.mask = (self.mask < 3.0).unsqueeze(1)
-        self.mask = self.mask.expand(self.input_B.size(0),2,self.input_B.size(2),self.input_B.size(3))
+        self.maskC = torch.sum(self.input_C, dim=1)
+        self.maskC = (self.maskC >= 3.0).unsqueeze(1)
+        self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
+
         #
-        self.mask0 = torch.sum(self.input_A, dim=1)
-        self.mask0 = (self.mask0 < 3.0).unsqueeze(1)
-        self.mask0 = self.mask0.expand(self.input_B.size(0),2,self.input_B.size(2),self.input_B.size(3))
+        self.maskB_fg = torch.sum(self.input_B, dim=1)
+        self.maskB_fg = (self.maskB_fg < 3.0).unsqueeze(1)
+        self.maskB_fg = self.maskB_fg.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        #
+        self.maskA_fg = torch.sum(self.input_A, dim=1)
+        self.maskA_fg = (self.maskA_fg < 3.0).unsqueeze(1)
+        self.maskA_fg = self.maskA_fg.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+
+        self.input_A[self.maskA] = 0.
+        self.input_B[self.maskB] = 0.
+        self.input_C[self.maskC] = 0.
+
 
 
     def forward(self):
@@ -306,38 +361,27 @@ class MultiViewModel(BaseModel):
         rectified = self.opt.rectified
         self.real_A = Variable(self.input_A)
         self.real_B = Variable(self.input_B)
-        self.real_Yaw = Variable(self.input_Yaw)
+        self.real_C = Variable(self.input_C)
 
-        if self.opt.dataset_mode == 'aligned_with_C':
-            self.real_C = Variable(self.input_C)+self.grid
+        self.real_YawAB= Variable(self.input_YawAB)
+        self.real_YawCB = Variable(self.input_YawCB)
 
-        if self.opt.concat_grid:
-            b = self.real_A.size(0)
-            real_A_grid = torch.cat([self.real_A, self.grid[:b, :, :, :].permute(0,3,1,2)], dim=1)
-        else:
-            real_A_grid = self.real_A
+        b = self.real_A.size(0)
+
+        zeros = Variable(torch.zeros((b,1)).cuda() )
+        pose = torch.cat( [zeros,zeros,zeros,zeros,-self.real_YawCB, zeros], dim=1)
+        dist = 2
 
         if not self.opt.use_pyramid:
-            self.fake_B_flow = self.netG(real_A_grid, self.real_Yaw, self.grid)
-            self.fake_B_flow_converted = convert_flow(self.fake_B_flow,self.grid,add_grid,rectified)
-            self.fake_B = torch.nn.functional.grid_sample(self.real_A, self.fake_B_flow_converted)
+            self.depth = self.netG(self.real_A, self.real_YawAB, self.grid)+dist
+            self.fake_B_flow = self.depth
+            self.fake_B_flow_converted = inverse_warp(self.real_C, self.depth, pose, dist, self.intrinsics[:b,:,:], self.intrinsics_inv[:b,:,:])
+            self.fake_B = F.grid_sample(self.real_C, self.fake_B_flow_converted)
+
         else:
-            self.real_B_pyramid = []
-            self.fake_B_pyramid = []
-            flow_pyramid = self.netG(real_A_grid, self.real_Yaw, self.grid)
-            real_A_downsampled = self.real_A
-            real_B_downsampled = self.real_B
+            self.fake_B_pyramid, self.depth, self.fake_B_flow_converted = self.netG(self.real_A, self.real_Yaw, pose)
 
-            for flow in reversed(flow_pyramid[-3:]):
-                self.real_B_pyramid.append(real_B_downsampled)
-                flow_converted = convert_flow(flow, self.grid, add_grid, rectified)
-                self.fake_B_pyramid.append(torch.nn.functional.grid_sample(real_A_downsampled, flow_converted))
-                real_A_downsampled = F.avg_pool2d(real_A_downsampled,2)
-                real_B_downsampled = F.avg_pool2d(real_B_downsampled,2)
-
-            self.fake_B_flow = flow_pyramid[-1]
-            self.fake_B_flow_converted = convert_flow(self.fake_B_flow, self.grid, add_grid, rectified)
-            self.fake_B = self.fake_B_pyramid[0]
+            self.fake_B = self.fake_B_pyramid[-1]
 
         if self.opt.lambda_kl > 0:
             self.mu,self.logvar = self.netG.get_mu_var()
@@ -350,19 +394,21 @@ class MultiViewModel(BaseModel):
         self.real_B = Variable(self.input_B, volatile=True)
         self.fake_B_list = []
 
-        NV = 10
-        for i in range(NV):
-            if self.opt.concat_grid:
-                b = self.real_A.size(0)
-                real_A_grid = torch.cat([self.real_A, self.grid[:b, :, :, :].permute(0, 3, 1, 2)], dim=1)
-            else:
-                real_A_grid = self.real_A
+        NV = 20
+        b = self.real_A.size(0)
 
-            fake_B_flow = self.netG(real_A_grid, Variable(torch.Tensor([-1/4.*np.pi + 1/2.*np.pi*i/(NV-1) ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0))
-            if self.opt.use_pyramid:
-                fake_B_flow = fake_B_flow[-1]
-            fake_B = torch.nn.functional.grid_sample(self.real_A, convert_flow(fake_B_flow,self.grid,add_grid,rectified))
-            self.fake_B_list.append(fake_B)
+        for i in range(NV):
+            dist = 2
+            self.real_Yaw = Variable(torch.Tensor([-1/4.*np.pi + 1/2.*np.pi*i/(NV-1) ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0)
+            self.depth = self.netG(self.real_A, self.real_Yaw, self.grid) + dist
+            self.fake_B_flow = self.depth
+            zeros = Variable(torch.zeros((b, 1)).cuda())
+            pose = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
+            self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth, pose, dist, self.intrinsics[:b, :, :],
+                                                      self.intrinsics_inv[:b, :, :])
+            self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+
+            self.fake_B_list.append(self.fake_B)
         # np.save(os.path.join("./results/features", os.path.basename(self.image_paths[0]) ), z.data.cpu().numpy())
 
     # get image paths
@@ -376,13 +422,13 @@ class MultiViewModel(BaseModel):
         # self.loss_G_GAN = self.opt.lambda_gan * self.criterionGAN(pred_fake, True)
         # Total variation loss
 
-        self.loss_TV = self.criterionTV(self.fake_B_flow) * self.opt.lambda_tv
+        self.loss_TV = self.criterionTV(self.depth) * self.opt.lambda_tv
 
-        if self.opt.lambda_flow > 0:
-            self.loss_G_flow = self.criterionL1(self.fake_B_flow_converted.permute(0,3,1,2)[self.mask],
-                                                self.real_C.permute(0,3,1,2)[self.mask]) * self.opt.lambda_flow
+        if self.opt.lambda_depth > 0:
+            self.loss_G_depth = self.criterionL1(self.depth[self.maskB[:,:1,:,:]],
+                                                Variable(-1*torch.ones(self.depth.size()).cuda())[self.maskB[:,:1,:,:]]) * self.opt.lambda_depth
         else:
-            self.loss_G_flow = 0. * self.loss_TV
+            self.loss_G_depth = 0. * self.loss_TV
 
         # KL loss
         if self.opt.lambda_kl > 0:
@@ -393,14 +439,20 @@ class MultiViewModel(BaseModel):
 
         # Second, G(A) = B
         if not self.opt.use_pyramid:
+            self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
             self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
+
         else:
+            self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
+
             self.loss_G_L1 = 0
-            for fake_B, real_B in zip(self.fake_B_pyramid, self.real_B_pyramid):
-                self.loss_G_L1 += self.criterionL1(fake_B, real_B) * self.opt.lambda_A / len(self.real_B_pyramid)
+            real_B_downsampled = self.real_B
+            for fake_B in reversed(self.fake_B_pyramid):
+                self.loss_G_L1 += self.criterionL1(fake_B, real_B_downsampled) * self.opt.lambda_A / len(self.fake_B_pyramid)
+                real_B_downsampled = F.avg_pool2d(real_B_downsampled,2)
 
         self.loss_G = self.loss_G_L1 \
-                      + self.loss_TV + self.loss_G_flow + self.loss_kl
+                      + self.loss_TV + self.loss_G_depth + self.loss_kl #+ self.loss_G_L1_masked
 
         self.loss_G.backward()
 
@@ -417,7 +469,8 @@ class MultiViewModel(BaseModel):
 
     def get_current_errors(self):
         return OrderedDict([('G_L1', self.loss_G_L1.data[0]),
-                            ('F_L1', self.loss_G_flow.data[0]),
+                            ('G_L1_masked', self.loss_G_L1_masked.data[0]),
+                            ('F_L1', self.loss_G_depth.data[0]),
                             ('KL', self.loss_kl.data[0]),
                             ('TV', self.loss_TV.data[0]),
                             ])
@@ -428,14 +481,13 @@ class MultiViewModel(BaseModel):
         real_A = util.tensor2im(self.real_A.data)
         fake_B = util.tensor2im(self.fake_B.data)
         real_B = util.tensor2im(self.real_B.data)
-        flow = util.tensor2im(self.fake_B_flow_converted.permute(0,3,1,2).data)
+        real_C = util.tensor2im(self.real_C.data)
 
-        if self.opt.dataset_mode == 'aligned_with_C':
-            real_flow = util.tensor2im(self.real_C.permute(0,3,1,2).data)
-        else:
-            real_flow = util.tensor2im(self.fake_B_flow_converted.permute(0, 3, 1, 2).data)
-        return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B),
-                            ('flow',flow), ('real_flow', real_flow)])
+        flow = util.tensor2im(self.fake_B_flow_converted.permute(0,3,1,2).data)
+        depth = util.tensor2im(self.depth.data)
+
+        return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B),('real_C', real_C),
+                            ('flow',flow), ('depth', depth)])
 
     def get_current_visuals_test(self):
         real_A = util.tensor2im(self.real_A.data)

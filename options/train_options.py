@@ -32,6 +32,8 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--lambda_z', type=float, default=0, help='weight for z L1 loss')
         self.parser.add_argument('--lambda_class', type=float, default=0, help='weight for class L1 loss')
         self.parser.add_argument('--lambda_flow', type=float, default=0, help='weight for class L1 loss')
+        self.parser.add_argument('--lambda_depth', type=float, default=0, help='weight for class L1 loss')
+
         self.parser.add_argument('--lambda_gan', type=float, default=1, help='weight for class L1 loss')
         self.parser.add_argument('--lambda_flow0', type=float, default=0, help='weight for class L1 loss')
 

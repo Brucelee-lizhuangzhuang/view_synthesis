@@ -32,47 +32,29 @@ class AlignedDatasetMultiView(BaseDataset):
 
     def __getitem__(self, index):
 
-
         if self.opt.phase == 'test':
             index += int(len(self.paths[int(self.nv/2)])*self.train_split)+1
 
-        if self.random_AB:
-            idx_A = np.random.randint(1, self.nv - 2)
-            idx_B = idx_A + np.random.choice([-1,1])
-        else:
-            idx_A = 1 #int(self.nv/2)
+        idx_A = np.random.randint(0, self.nv - 1)
+        idx_B = np.random.randint(0, self.nv - 1)
+        choices = []
+        if idx_B >= 2: choices.append(idx_B - 1)
+        if idx_B >= 3: choices.append(idx_B - 2)
 
-            if self.opt.phase == 'train':
-                if self.opt.ignore_center:
-                    idx_B = np.random.randint(0, self.nv - 1)
-                    if idx_B == idx_A:
-                        idx_B = self.nv - 1
-                else:
-                    idx_B = np.random.randint(0, self.nv)
-            else:
-                idx_B = np.random.randint(0, self.nv)
+        if idx_B <= self.nv-1 : choices.append(idx_B + 1)
+        idx_C = idx_B + np.random.choice(choices)
 
-
-
-        # if self.opt.phase == 'train':
-        #     idx_A = np.random.choice((1,2,3))
-        #     idx_B = 0 #np.random.choice((0,2))
+        if self.opt.phase == 'test':
+            idx_A = 2
+            idx_B = 2
+            idx_C = 2
 
         A = Image.open(self.paths[idx_A][index]).convert('RGB')
         A = self.transform(A)
         B = Image.open(self.paths[idx_B][index]).convert('RGB')
         B = self.transform(B)
-
-        # print idx_B, index
-        # C_path = self.C_paths[index]
-        # C_arr = np.load(C_path)
-        # if C_arr.shape[1] > self.opt.fineSize:
-        #     stride = C_arr.shape[1]/self.opt.fineSize
-        #     C_arr = C_arr[::int(stride),::int(stride),:]
-        # else:
-        #     C_arr = C_arr
-        # C = torch.from_numpy(C_arr).float()
-
+        C = Image.open(self.paths[idx_C][index]).convert('RGB')
+        C = self.transform(C)
 
         if self.opt.which_direction == 'BtoA':
             input_nc = self.opt.output_nc
@@ -89,9 +71,10 @@ class AlignedDatasetMultiView(BaseDataset):
             tmp = B[0, ...] * 0.299 + B[1, ...] * 0.587 + B[2, ...] * 0.114
             B = tmp.unsqueeze(0)
 
-        yaw = (idx_A-idx_B) * np.pi/9
+        yaw1 = -(idx_B-idx_A) * np.pi/9
+        yaw2 = -(idx_B-idx_C) * np.pi/9
 
-        return {'A': A, 'B': B, 'Yaw': torch.Tensor([yaw]),
+        return {'A': A, 'B': B, 'C': C, 'YawAB': torch.Tensor([yaw1]),'YawCB': torch.Tensor([yaw2]),
                 'A_paths': self.paths[int(self.nv/2)][index], }
 
     def __len__(self):
