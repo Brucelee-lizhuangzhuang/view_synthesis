@@ -60,6 +60,8 @@ class BaseOptions():
         self.parser.add_argument('--n_bilinear_layers', type=int, default=0, help='#latent vector')
         self.parser.add_argument('--random_AB', action='store_true', help='adding grid')
 
+        self.parser.add_argument('--train_split', type=float, default=1., help='# of encoder filters in first conv layer')
+
         self.initialized = True
 
     def parse(self):

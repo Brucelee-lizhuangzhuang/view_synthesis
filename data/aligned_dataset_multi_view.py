@@ -15,7 +15,7 @@ class AlignedDatasetMultiView(BaseDataset):
         self.paths = []
         self.random_AB = opt.random_AB
         self.nv = 9
-        self.train_split = .8
+        self.train_split = opt.train_split
 
         for i in range(self.nv):
             self.dirs.append(os.path.join(opt.dataroot, "%d" %i) )
@@ -40,7 +40,7 @@ class AlignedDatasetMultiView(BaseDataset):
             idx_A = np.random.randint(1, self.nv - 2)
             idx_B = idx_A + np.random.choice([-1,1])
         else:
-            idx_A = 1 #int(self.nv/2)
+            idx_A = int(self.nv/2)
 
             if self.opt.phase == 'train':
                 if self.opt.ignore_center:
@@ -89,7 +89,7 @@ class AlignedDatasetMultiView(BaseDataset):
             tmp = B[0, ...] * 0.299 + B[1, ...] * 0.587 + B[2, ...] * 0.114
             B = tmp.unsqueeze(0)
 
-        yaw = (idx_A-idx_B) * np.pi/9
+        yaw = (idx_A-idx_B) * np.pi/9.
 
         return {'A': A, 'B': B, 'Yaw': torch.Tensor([yaw]),
                 'A_paths': self.paths[int(self.nv/2)][index], }

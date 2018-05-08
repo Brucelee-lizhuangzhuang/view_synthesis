@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import itertools
 import torchvision
 from projection_layer import inverse_warp
+import projection_layer2
 ### Feature Transformer Network
 ### http://pytorch.org/tutorials/intermediate/spatial_transformer_tutorial.html
 def rotation_tensor(yaw, n_comps, gpu):
@@ -362,17 +363,32 @@ class MultiViewDepthModel(BaseModel):
             real_A_grid = self.real_A
 
         zeros = Variable(torch.zeros((b,1)).cuda() )
-        pose = torch.cat( [zeros,zeros,zeros,zeros,-self.real_Yaw, zeros], dim=1)
-        dist = 2
+        ones = Variable(torch.ones((b,1)).cuda() )
+
+        pose_rel = torch.cat( [zeros,zeros,zeros,zeros,-self.real_Yaw, zeros], dim=1)
+        # pose_abs = torch.cat( [1.7*ones,zeros, -0.9*ones, -0.15*np.pi*ones, zeros, zeros], dim=1)
+        pose_abs = torch.cat( [zeros,-0.9*ones,1.7*ones,-0.15*np.pi*ones,zeros,zeros], dim=1)
+
+        dist = 1.7 / np.cos(0.15*np.pi)
+        elevated = 1
+
+        if elevated:
+            self.depth = self.netG(real_A_grid, self.real_Yaw, self.grid)+dist
+            self.fake_B_flow = self.depth
+            self.fake_B_flow_converted = projection_layer2.inverse_warp(self.real_A, self.depth,
+                                                                        pose_rel, pose_abs, self.intrinsics[:b,:,:], self.intrinsics_inv[:b,:,:])
+            self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+            return
 
         if not self.opt.use_pyramid:
             self.depth = self.netG(real_A_grid, self.real_Yaw, self.grid)+dist
             self.fake_B_flow = self.depth
-            self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth, pose, dist, self.intrinsics[:b,:,:], self.intrinsics_inv[:b,:,:])
+            self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth,
+                                                                        pose_rel, dist, self.intrinsics[:b,:,:], self.intrinsics_inv[:b,:,:])
             self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
 
         else:
-            self.fake_B_pyramid, self.depth, self.fake_B_flow_converted = self.netG(real_A_grid, self.real_Yaw, pose)
+            self.fake_B_pyramid, self.depth, self.fake_B_flow_converted = self.netG(real_A_grid, self.real_Yaw, pose_rel)
 
             self.fake_B = self.fake_B_pyramid[-1]
 
@@ -381,25 +397,39 @@ class MultiViewDepthModel(BaseModel):
 
     # no backprop gradients
     def test(self):
-        add_grid = self.opt.add_grid
-        rectified = self.opt.rectified
+
         self.real_A = Variable(self.input_A, volatile=True)
         self.real_B = Variable(self.input_B, volatile=True)
         self.fake_B_list = []
 
-        NV = 20
+        NV = 10
         b = self.real_A.size(0)
+        zeros = Variable(torch.zeros((b,1)).cuda() )
+        ones = Variable(torch.ones((b,1)).cuda() )
+
+        pose_abs = torch.cat( [zeros,-0.9*ones,1.7*ones,-0.15*np.pi*ones,zeros,zeros], dim=1)
+
+        elevated = 1
+        dist = 1.7 / np.cos(0.15*np.pi)
 
         for i in range(NV):
-            dist = 2
-            self.real_Yaw = Variable(torch.Tensor([-1/4.*np.pi + 1/2.*np.pi*i/(NV-1) ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0)
+            self.real_Yaw = Variable(-torch.Tensor([-4/9.*np.pi + 8/9.*np.pi*i/(NV-1) ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0)
             self.depth = self.netG(self.real_A, self.real_Yaw, self.grid) + dist
             self.fake_B_flow = self.depth
-            zeros = Variable(torch.zeros((b, 1)).cuda())
-            pose = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
-            self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth, pose, dist, self.intrinsics[:b, :, :],
-                                                      self.intrinsics_inv[:b, :, :])
-            self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+            pose_rel = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
+
+            if elevated:
+
+                self.fake_B_flow_converted = projection_layer2.inverse_warp(self.real_A, self.depth,
+                                                                            pose_rel, pose_abs,
+                                                                            self.intrinsics[:b, :, :],
+                                                                            self.intrinsics_inv[:b, :, :])
+                self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+            else:
+
+                self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth, pose_rel, dist, self.intrinsics[:b, :, :],
+                                                          self.intrinsics_inv[:b, :, :])
+                self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
 
             self.fake_B_list.append(self.fake_B)
         # np.save(os.path.join("./results/features", os.path.basename(self.image_paths[0]) ), z.data.cpu().numpy())

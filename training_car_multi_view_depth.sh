@@ -1,28 +1,27 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/car_multi_view/ \
+    --dataroot ~/data/view_synthesis/car_multi_view_elevated// \
     --dataset_mode aligned_multi_view\
-    --name car_multi_view_depth_ftae_randomAB\
+    --name car_multi_view_depth_ftae_elevated256\
     --model multi_view_depth \
-    --which_model_netG unet_128\
     --save_epoch_freq 50 \
-    --loadSize 128 \
-    --fineSize 128 \
+    --loadSize 256 \
+    --fineSize 256 \
     --no_flip\
     --display_freq 100 \
     --display_port 8098 \
     --no_dropout \
-    --lr 0.00006 \
+    --lr 0.0002 \
     --niter 200 \
     --niter_decay 200 \
     --lambda_gan 0 \
     --batchSize 16 \
-    --nz 200\
+    --nz 50\
     --lambda_tv 0\
     --lambda_flow 0\
     --norm batch\
     --ignore_center\
-    --random_AB
+
     #    --use_pyramid\
 
 #    --n_bilinear_layers 3
