@@ -38,5 +38,6 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--lambda_flow0', type=float, default=0, help='weight for class L1 loss')
         self.parser.add_argument('--ignore_center', action='store_true', help='do not train center view')
         self.parser.add_argument('--number_samples', type=int, default=2, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
+        self.parser.add_argument('--only_neighbour', action='store_true', help='do not train center view')
 
         self.isTrain = True
