@@ -1,8 +1,8 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/car_multi_view_elevated// \
+    --dataroot ~/data/view_synthesis/car_full/ \
     --dataset_mode aligned_multi_view\
-    --name car_multi_view_depth_ftae_elevated256_randomAB\
+    --name car_full\
     --model multi_view_depth \
     --save_epoch_freq 50 \
     --loadSize 256 \
@@ -22,6 +22,8 @@ python train.py\
     --norm batch\
     --ignore_center\
     --random_AB
+
+
 #    --n_bilinear_layers 1
 
     #    --use_pyramid\

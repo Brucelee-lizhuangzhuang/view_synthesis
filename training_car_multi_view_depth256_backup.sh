@@ -1,9 +1,9 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/car_full/ \
-    --dataset_mode aligned_multi_view_random\
-    --name car_full \
-    --model multi_view_depth_random \
+    --dataroot ~/data/view_synthesis/car_multi_view_elevated// \
+    --dataset_mode aligned_multi_view\
+    --name car_multi_view_depth_ftae_elevated256\
+    --model multi_view_depth \
     --save_epoch_freq 50 \
     --loadSize 256 \
     --fineSize 256 \
@@ -12,8 +12,8 @@ python train.py\
     --display_port 8098 \
     --no_dropout \
     --lr 0.00002 \
-    --niter 400 \
-    --niter_decay 400 \
+    --niter 200 \
+    --niter_decay 200 \
     --lambda_gan 0 \
     --batchSize 16 \
     --nz 200\
@@ -21,10 +21,9 @@ python train.py\
     --lambda_flow 0\
     --norm batch\
     --ignore_center\
-    --train_split 0.8\
-    --number_samples 2
 
-# 0.00002
+#    --n_bilinear_layers 1
+
     #    --use_pyramid\
 
 #    --n_bilinear_layers 3

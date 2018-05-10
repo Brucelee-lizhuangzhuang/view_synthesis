@@ -14,8 +14,8 @@ class AlignedDatasetMultiView(BaseDataset):
         self.dirs = []
         self.paths = []
         self.random_AB = opt.random_AB
-        self.nv = 9
-        self.train_split = .8
+        self.nv = 18
+        self.train_split = opt.train_split
 
         for i in range(self.nv):
             self.dirs.append(os.path.join(opt.dataroot, "%d" %i) )
@@ -34,20 +34,45 @@ class AlignedDatasetMultiView(BaseDataset):
 
 
         if self.opt.phase == 'test':
-            index += int(len(self.paths[int(self.nv/2)])*self.train_split)+1
+            # index += int(len(self.paths[int(self.nv/2)])*self.train_split)+1
+            index = np.random.randint(0, self.__len__())
 
-        idx_A = np.random.randint(0, self.nv - 1)
-        idx_B = np.random.randint(0, self.nv - 1)
-        choices = []
-        if idx_B >= 1: choices.append(-1)
-        if idx_B <= self.nv-1 : choices.append(1)
-        idx_C = idx_B + np.random.choice(choices)
+        if self.opt.category == 'car':
+            idx_A = np.random.randint(0, self.nv - 1)
+            choices = [2,1,-1,-2]
 
-        if self.opt.phase == 'test':
-            idx_A = 2
-            idx_B = 2
-            idx_C = 2
+            if self.opt.ignore_center:
+                idx_B = np.random.randint(0, self.nv - 2)
+                idx_B = (self.nv-1) if idx_B == idx_A else idx_B
+            else:
+                idx_B = np.random.randint(0, self.nv - 1)
 
+            if self.opt.only_neighbour:
+                idx_B = idx_A + np.random.choice(choices)
+
+            # if idx_B >= 1: choices.append(-1)
+            # if idx_B <= self.nv-1 : choices.append(1)
+            idx_C = (idx_B + np.random.choice(choices)) if self.opt.number_samples == 3 else idx_A
+
+            yaw1 = -(idx_B-idx_A) * np.pi/9
+            yaw2 = -(idx_B-idx_C) * np.pi/9
+
+            idx_C = np.mod(idx_C,self.nv)
+            idx_B = np.mod(idx_B,self.nv)
+
+
+        if self.opt.category == 'human':
+            idx_A = int(self.nv/2)
+            idx_B = np.random.randint(0, self.nv - 1)
+            # if idx_B >= 1: choices.append(-1)
+            # if idx_B <= self.nv-1 : choices.append(1)
+            idx_C = idx_A
+
+            yaw1 = -(idx_B - idx_A) * np.pi / 18
+            yaw2 = -(idx_B - idx_C) * np.pi / 18
+
+        if self.opt.phase == 'test' :
+            idx_C = idx_A
 
 
 
@@ -74,8 +99,6 @@ class AlignedDatasetMultiView(BaseDataset):
             tmp = B[0, ...] * 0.299 + B[1, ...] * 0.587 + B[2, ...] * 0.114
             B = tmp.unsqueeze(0)
 
-        yaw1 = -(idx_B-idx_A) * np.pi/9
-        yaw2 = -(idx_B-idx_C) * np.pi/9
 
         return {'A': A, 'B': B, 'C': C, 'YawAB': torch.Tensor([yaw1]),'YawCB': torch.Tensor([yaw2]),
                 'A_paths': self.paths[int(self.nv/2)][index], }

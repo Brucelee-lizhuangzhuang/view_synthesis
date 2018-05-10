@@ -14,7 +14,7 @@ class AlignedDatasetMultiView(BaseDataset):
         self.dirs = []
         self.paths = []
         self.random_AB = opt.random_AB
-        self.nv = 9
+        self.nv = 18
         self.train_split = opt.train_split
 
         for i in range(self.nv):

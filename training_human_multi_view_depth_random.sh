@@ -1,15 +1,15 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/car_full/ \
+    --dataroot ~/data/view_synthesis/human/ \
     --dataset_mode aligned_multi_view_random\
-    --name car_full \
+    --name human_full_random \
     --model multi_view_depth_random \
     --save_epoch_freq 50 \
-    --loadSize 256 \
-    --fineSize 256 \
+    --loadSize 128 \
+    --fineSize 128 \
     --no_flip\
     --display_freq 100 \
-    --display_port 8098 \
+    --display_port 8099 \
     --no_dropout \
     --lr 0.00002 \
     --niter 400 \
@@ -22,9 +22,9 @@ python train.py\
     --norm batch\
     --ignore_center\
     --train_split 0.8\
-    --number_samples 2
+    --category human
 
-# 0.00002
+
     #    --use_pyramid\
 
 #    --n_bilinear_layers 3

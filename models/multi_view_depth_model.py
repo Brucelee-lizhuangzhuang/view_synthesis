@@ -354,22 +354,14 @@ class MultiViewDepthModel(BaseModel):
         self.real_Yaw = Variable(self.input_Yaw)
         b = self.real_A.size(0)
 
-        if self.opt.dataset_mode == 'aligned_with_C':
-            self.real_C = Variable(self.input_C)+self.grid
-
-        if self.opt.concat_grid:
-            real_A_grid = torch.cat([self.real_A, self.grid[:b, :, :, :].permute(0,3,1,2)], dim=1)
-        else:
-            real_A_grid = self.real_A
-
         zeros = Variable(torch.zeros((b,1)).cuda() )
         ones = Variable(torch.ones((b,1)).cuda() )
 
         pose_rel = torch.cat( [zeros,zeros,zeros,zeros,-self.real_Yaw, zeros], dim=1)
-        # pose_abs = torch.cat( [1.7*ones,zeros, -0.9*ones, -0.15*np.pi*ones, zeros, zeros], dim=1)
+        # pose_abs = torch.cat( [zeros,zeros, 2*ones, zeros, zeros, zeros], dim=1) #
         pose_abs = torch.cat( [zeros,-0.9*ones,1.7*ones,-0.15*np.pi*ones,zeros,zeros], dim=1)
 
-        dist = 1.7 / np.cos(0.15*np.pi)
+        dist = 1.7 / np.cos(0.15*np.pi) # this is to ease the generation of depth, so that depth can be zero meaned
         elevated = 1
 
         if elevated:
@@ -402,7 +394,7 @@ class MultiViewDepthModel(BaseModel):
         self.real_B = Variable(self.input_B, volatile=True)
         self.fake_B_list = []
 
-        NV = 10
+        NV = 320
         b = self.real_A.size(0)
         zeros = Variable(torch.zeros((b,1)).cuda() )
         ones = Variable(torch.ones((b,1)).cuda() )

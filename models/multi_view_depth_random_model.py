@@ -12,6 +12,8 @@ import torch.nn.functional as F
 import itertools
 import torchvision
 from projection_layer import inverse_warp
+import projection_layer2
+
 ### Feature Transformer Network
 ### http://pytorch.org/tutorials/intermediate/spatial_transformer_tutorial.html
 def rotation_tensor(yaw, n_comps, gpu):
@@ -157,7 +159,7 @@ class FTAE(nn.Module):
                 enc += [nl_layer_enc()]
         # sequence += [nn.AvgPool2d(8)]
         self.enc = nn.Sequential(*enc)
-        self.fc = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3), nn.LeakyReLU(0.2, True)])
+        self.fc = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3)]) #nn.LeakyReLU(0.2, True)
         if use_vae:
             self.fc_var = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3), nn.LeakyReLU(0.2, True)])
         self.fc2 = nn.Sequential(*[nn.Linear(nz * 3, ndf * nf_mult), nn.LeakyReLU(0.2, True)])
@@ -198,7 +200,7 @@ class FTAE(nn.Module):
             self.logvar = logvar
         else:
             z_fc = self.fc(z_conv.view(x.size(0),-1) ).view(x.size(0), self.nz, 3)
-        # z_fc = F.tanh(z_fc)
+        z_fc = F.tanh(z_fc)
 
         R = rotation_tensor(yaw, x.size(0), self.gpu_ids[0])
         z_rot = z_fc.bmm(R) # + T
@@ -280,14 +282,25 @@ class MultiViewDepthModel(BaseModel):
         self.grid = self.grid.view(1,self.grid.size(0),self.grid.size(1),self.grid.size(2)).expand(opt.batchSize,opt.fineSize,opt.fineSize,2)
         self.grid = Variable(self.grid)
 
-        intrinsics = np.array(
-            [opt.fineSize / 32. * 60, 0., opt.fineSize/2., \
-             0., opt.fineSize / 32. * 60, opt.fineSize/2., \
-             0., 0., 1.]).reshape((1, 3, 3))
-        intrinsics_inv = np.linalg.inv(np.array(
-            [opt.fineSize / 32. * 60, 0., opt.fineSize / 2., \
-             0., opt.fineSize / 32. * 60, opt.fineSize / 2., \
-             0., 0., 1.]).reshape((3, 3))).reshape((1, 3, 3))
+        if self.opt.category == 'car':
+            intrinsics = np.array(
+                [opt.fineSize / 32. * 60, 0., opt.fineSize/2., \
+                 0., opt.fineSize / 32. * 60, opt.fineSize/2., \
+                 0., 0., 1.]).reshape((1, 3, 3))
+            intrinsics_inv = np.linalg.inv(np.array(
+                [opt.fineSize / 32. * 60, 0., opt.fineSize / 2., \
+                 0., opt.fineSize / 32. * 60, opt.fineSize / 2., \
+                 0., 0., 1.]).reshape((3, 3))).reshape((1, 3, 3))
+        if self.opt.category == 'human':
+            intrinsics = np.array(
+                [opt.fineSize / 32. * 35, 0., opt.fineSize/2., \
+                 0., opt.fineSize / 32. * 35, opt.fineSize/2., \
+                 0., 0., 1.]).reshape((1, 3, 3))
+            intrinsics_inv = np.linalg.inv(np.array(
+                [opt.fineSize / 32. * 35, 0., opt.fineSize / 2., \
+                 0., opt.fineSize / 32. * 35, opt.fineSize / 2., \
+                 0., 0., 1.]).reshape((3, 3))).reshape((1, 3, 3))
+
         self.intrinsics = Variable(torch.from_numpy(intrinsics.astype(np.float32)).cuda()).expand(opt.batchSize,3,3)
         self.intrinsics_inv = Variable(torch.from_numpy(intrinsics_inv.astype(np.float32)).cuda()).expand(opt.batchSize,3,3)
 
@@ -328,18 +341,36 @@ class MultiViewDepthModel(BaseModel):
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
         #
-        self.maskB = torch.sum(self.input_B, dim=1)
-        self.maskB = (self.maskB >= 3.0).unsqueeze(1)
-        self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
-        #
-        self.maskA = torch.sum(self.input_A, dim=1)
-        self.maskA = (self.maskA >= 3.0).unsqueeze(1)
-        self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+        if self.opt.category == 'car':
 
-        #
-        self.maskC = torch.sum(self.input_C, dim=1)
-        self.maskC = (self.maskC >= 3.0).unsqueeze(1)
-        self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
+            self.maskB = torch.sum(self.input_B, dim=1)
+            self.maskB = (self.maskB >= 3.0).unsqueeze(1)
+            self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+            #
+            self.maskA = torch.sum(self.input_A, dim=1)
+            self.maskA = (self.maskA >= 3.0).unsqueeze(1)
+            self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+
+            #
+            self.maskC = torch.sum(self.input_C, dim=1)
+            self.maskC = (self.maskC >= 3.0).unsqueeze(1)
+            self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
+
+        if self.opt.category == 'human':
+
+            self.maskB = torch.sum(self.input_B, dim=1)
+            self.maskB = (self.maskB <= -3.0).unsqueeze(1)
+            self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+            #
+            self.maskA = torch.sum(self.input_A, dim=1)
+            self.maskA = (self.maskA <= -3.0).unsqueeze(1)
+            self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+
+            #
+            self.maskC = torch.sum(self.input_C, dim=1)
+            self.maskC = (self.maskC <= -3.0).unsqueeze(1)
+            self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
+
 
         #
         self.maskB_fg = torch.sum(self.input_B, dim=1)
@@ -349,6 +380,7 @@ class MultiViewDepthModel(BaseModel):
         self.maskA_fg = torch.sum(self.input_A, dim=1)
         self.maskA_fg = (self.maskA_fg < 3.0).unsqueeze(1)
         self.maskA_fg = self.maskA_fg.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+
 
         self.input_A[self.maskA] = 0.
         self.input_B[self.maskB] = 0.
@@ -369,8 +401,25 @@ class MultiViewDepthModel(BaseModel):
         b = self.real_A.size(0)
 
         zeros = Variable(torch.zeros((b,1)).cuda() )
-        pose = torch.cat( [zeros,zeros,zeros,zeros,-self.real_YawCB, zeros], dim=1)
-        dist = 2
+        ones = Variable(torch.ones((b,1)).cuda() )
+
+        pose_rel = torch.cat( [zeros,zeros,zeros,zeros,-self.real_YawCB, zeros], dim=1)
+        # pose_abs = torch.cat( [zeros,zeros, 2*ones, zeros, zeros, zeros], dim=1) #
+        if self.opt.category == 'car':
+            pose_abs = torch.cat( [zeros,-0.9*ones,1.7*ones,-0.15*np.pi*ones,zeros,zeros], dim=1)
+            dist = 1.7 / np.cos(0.15*np.pi) # this is to ease the generation of depth, so that depth can be zero meaned
+        if self.opt.category == 'human':
+            pose_abs = torch.cat( [zeros,zeros,1.4*ones,zeros,zeros,zeros], dim=1)
+            dist = 1.4 # this is to ease the generation of depth, so that depth can be zero meaned
+        elevated = 1
+
+        if elevated:
+            self.depth = self.netG(self.real_A, self.real_YawAB, self.grid)+dist
+            self.fake_B_flow = self.depth
+            self.fake_B_flow_converted = projection_layer2.inverse_warp(self.real_C, self.depth,
+                                                                        pose_rel, pose_abs, self.intrinsics[:b,:,:], self.intrinsics_inv[:b,:,:])
+            self.fake_B = F.grid_sample(self.real_C, self.fake_B_flow_converted)
+            return
 
         if not self.opt.use_pyramid:
             self.depth = self.netG(self.real_A, self.real_YawAB, self.grid)+dist
@@ -394,21 +443,57 @@ class MultiViewDepthModel(BaseModel):
         self.real_B = Variable(self.input_B, volatile=True)
         self.fake_B_list = []
 
-        NV = 20
+        NV = self.opt.test_views
         b = self.real_A.size(0)
+        zeros = Variable(torch.zeros((b,1)).cuda() )
+        ones = Variable(torch.ones((b,1)).cuda() )
+
+        if self.opt.category == 'car':
+            pose_abs = torch.cat( [zeros,-0.9*ones,1.7*ones,-0.15*np.pi*ones,zeros,zeros], dim=1)
+            dist = 1.7 / np.cos(0.15*np.pi) # this is to ease the generation of depth, so that depth can be zero meaned
+            # pose_abs = torch.cat( [zeros,-1*ones,np.sqrt(3)*ones,np.pi/6.*ones,zeros,zeros], dim=1)
+            # dist = np.sqrt(3) / np.cos(np.pi/6.) # this is to ease the generation of depth, so that depth can be zero meaned
+        if self.opt.category == 'human':
+            pose_abs = torch.cat( [zeros,zeros,1.4*ones,zeros,zeros,zeros], dim=1)
+            dist = 1.4 # this is to ease the generation of depth, so that depth can be zero meaned
+
+        elevated = 1
 
         for i in range(NV):
-            dist = 2
-            self.real_Yaw = Variable(torch.Tensor([-1/4.*np.pi + 1/2.*np.pi*i/(NV-1) ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0)
+            self.real_Yaw = Variable(-torch.Tensor([-4/9.*np.pi + 8/9.*np.pi*i/(NV-1) ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0)
             self.depth = self.netG(self.real_A, self.real_Yaw, self.grid) + dist
             self.fake_B_flow = self.depth
-            zeros = Variable(torch.zeros((b, 1)).cuda())
-            pose = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
-            self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth, pose, dist, self.intrinsics[:b, :, :],
-                                                      self.intrinsics_inv[:b, :, :])
-            self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+            pose_rel = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
+
+            if elevated:
+
+                self.fake_B_flow_converted = projection_layer2.inverse_warp(self.real_A, self.depth,
+                                                                            pose_rel, pose_abs,
+                                                                            self.intrinsics[:b, :, :],
+                                                                            self.intrinsics_inv[:b, :, :])
+                self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+            else:
+
+                self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth, pose_rel, dist, self.intrinsics[:b, :, :],
+                                                          self.intrinsics_inv[:b, :, :])
+                self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
 
             self.fake_B_list.append(self.fake_B)
+
+        # b = self.real_A.size(0)
+        #
+        # for i in range(NV):
+        #     dist = 2
+        #     self.real_Yaw = Variable(torch.Tensor([-1/4.*np.pi + 1/2.*np.pi*i/(NV-1) ]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0)
+        #     self.depth = self.netG(self.real_A, self.real_Yaw, self.grid) + dist
+        #     self.fake_B_flow = self.depth
+        #     zeros = Variable(torch.zeros((b, 1)).cuda())
+        #     pose = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
+        #     self.fake_B_flow_converted = inverse_warp(self.real_A, self.depth, pose, dist, self.intrinsics[:b, :, :],
+        #                                               self.intrinsics_inv[:b, :, :])
+        #     self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+        #
+        #     self.fake_B_list.append(self.fake_B)
         # np.save(os.path.join("./results/features", os.path.basename(self.image_paths[0]) ), z.data.cpu().numpy())
 
     # get image paths
