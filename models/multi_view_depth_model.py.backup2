@@ -332,3 +332,115 @@ def get_z_random(batchSize, nz, random_type='gauss'):
 #
 #     self.deconv = nn.Sequential(*deconv)
 #     self.nz = nz
+
+
+
+
+
+
+class FTAE_pyramid(nn.Module):
+    def __init__(self, input_nc, ndf=64, n_layers=7, n_bilinear_layers=0,
+                 norm_layer=None, nl_layer_enc=None, nl_layer_dec=None, gpu_ids=[],nz=200, use_vae=False):
+        super(FTAE_pyramid, self).__init__()
+        self.gpu_ids = gpu_ids
+        self.use_vae = use_vae
+
+        kw, padw = 4, 1
+
+        enc = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nl_layer_enc()]
+
+        nf_mult = 1
+        for n in range(1, n_layers):
+            nf_mult_prev = nf_mult
+            nf_mult = min(2**n, 4)
+            enc += [
+                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult,
+                          kernel_size=kw, stride=2, padding=padw)]
+            if norm_layer is not None and n < n_layers-1:
+                enc += [norm_layer(ndf * nf_mult)]
+                enc += [nl_layer_enc()]
+        # sequence += [nn.AvgPool2d(8)]
+        self.enc = nn.Sequential(*enc)
+        self.fc = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz*3), nn.LeakyReLU(0.2, True)])
+        if use_vae:
+            self.fc_var = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3), nn.LeakyReLU(0.2, True)])
+        self.fc2 = nn.Sequential(*[nn.Linear(nz*3, ndf * nf_mult), nn.LeakyReLU(0.2, True)])
+
+        deconv_layers = []
+
+        for n in range(1, n_layers):
+            nf_mult_prev = nf_mult
+            nf_mult = min(2**(n_layers - n - 1), 4)
+            upsample = 'bilinear' if n_layers - n < n_bilinear_layers else 'basic'
+            deconv = networks.upsampleLayer(ndf * nf_mult_prev, ndf * nf_mult, upsample=upsample)
+            if norm_layer is not None and (n_layers - n + 1) < n_layers:
+                deconv += [norm_layer(ndf * nf_mult)]
+            deconv += [nl_layer_dec()]
+            deconv_layers.append( nn.Sequential(*deconv).cuda() )
+            self.add_module("deconv_%d"%n, deconv_layers[-1])
+
+        if n_bilinear_layers > 0:
+            deconv = networks.upsampleLayer(ndf, 1, upsample='bilinear')
+        else:
+            deconv = networks.upsampleLayer(ndf, 1, upsample='basic')
+        deconv_layers.append(nn.Sequential(*deconv).cuda())
+        self.add_module("deconv_%d" % n_layers, deconv_layers[-1])
+
+        self.deconv_layers = deconv_layers
+        self.nz = nz
+
+
+    def forward(self, x, yaw, pose, Tz=0 ):
+        z_conv = self.enc(x)
+        if self.use_vae:
+            mu = self.fc(z_conv.view(x.size(0),-1) )
+            logvar = self.fc_var(z_conv.view(x.size(0),-1) )
+            std = logvar.mul(0.5).exp_()
+            eps = get_z_random(std.size(0), std.size(1), 'gauss')
+            z_fc = eps.mul(std).add_(mu).view(x.size(0), self.nz, 3)
+            T = np.array([1, 0, 0])
+            T = Variable(torch.from_numpy(T.astype(np.float32))).cuda().expand(x.size(0), self.nz, 3)
+            z_fc += T
+            self.mu = mu
+            self.logvar = logvar
+        else:
+            z_fc = self.fc(z_conv.view(x.size(0),-1) ).view(x.size(0), self.nz, 3)
+        # z_fc = F.tanh(z_fc)
+
+        R = rotation_tensor(yaw, x.size(0), self.gpu_ids[0])
+        z_rot = z_fc.bmm(R) # + T
+        z_rot_fc = self.fc2(z_rot.view(x.size(0), self.nz*3))
+
+        depths = []
+        y_list = []
+        output = self.deconv_layers[0](z_rot_fc.view(z_conv.size(0),z_conv.size(1),z_conv.size(2),z_conv.size(3)))
+
+        scale = 2
+        b = x.size(0)
+        dist = 2
+        for i,layers in enumerate(self.deconv_layers[1:]) :
+
+            output = layers(output)
+            depth = F.tanh(output[:,:1,:,:])
+            # depths.append( F.tanh(output[:,:1,:,:]) )
+            scale *= 2
+            if i < 4:
+                continue
+            x_downsampled = F.avg_pool2d(x, int(x.size(2)/scale))
+            intrinsics = np.array(
+                [scale / 32. * 60, 0., scale / 2., \
+                 0., scale / 32. * 60, scale / 2., \
+                 0., 0., 1.]).reshape((3, 3))
+            intrinsics_inv = np.linalg.inv(intrinsics)
+            intrinsics = Variable(torch.from_numpy(intrinsics.astype(np.float32)).cuda()).unsqueeze(0).expand(b, 3,3)
+            intrinsics_inv = Variable(torch.from_numpy(intrinsics_inv.astype(np.float32)).cuda()).unsqueeze(0).expand(b, 3, 3)
+            flow_converted = inverse_warp(x_downsampled, depth + dist, pose, dist,
+                                          intrinsics, intrinsics_inv)
+            y_downsampled = F.grid_sample(x_downsampled, flow_converted)
+            y_list.append(y_downsampled)
+
+        return y_list, depth, flow_converted
+
+
+    def get_mu_var(self):
+        return self.mu,self.logvar
