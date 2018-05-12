@@ -341,7 +341,7 @@ class MultiViewDepthModel(BaseModel):
             self.fake_B = F.grid_sample(self.real_C, self.fake_B_flow_converted)
 
         if self.opt.use_masked_L1:
-            self.fake_B = self.fake_B * self.real_mask
+            self.fake_B = self.fake_B*self.real_mask.unsqueeze(1).expand(b,3,h,w)
     # no backprop gradients
     def test(self):
         add_grid = self.opt.add_grid
