@@ -97,7 +97,7 @@ class AlignedDatasetMultiView(BaseDataset):
         B,mask = self.remapping_background(B, bg_color)
         mask = np.logical_not(mask)
         mask = mask.astype(np.float32)
-        mask[mask==0] = -2
+        # mask[mask==0] = -2
         B = self.transform(B)
 
         C = Image.open(self.paths[idx_C][index]).convert('RGB')
@@ -120,7 +120,7 @@ class AlignedDatasetMultiView(BaseDataset):
             B = tmp.unsqueeze(0)
 
 
-        return {'A': A, 'B': B, 'C': C, 'YawAB': torch.Tensor([yaw1]),'YawCB': torch.Tensor([yaw2]),'mask': torch.Tensor( mask),
+        return {'A': A, 'B': B, 'C': C, 'YawAB': torch.Tensor([yaw1]),'YawCB': torch.Tensor([yaw2]),'mask': torch.Tensor(mask),
                 'A_paths': self.paths[int(self.nv/2)][index], }
 
     def __len__(self):
