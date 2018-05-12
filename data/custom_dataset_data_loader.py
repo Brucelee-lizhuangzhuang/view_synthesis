@@ -19,6 +19,9 @@ def CreateDataset(opt):
     elif opt.dataset_mode == 'aligned_depth':
         from data.aligned_dataset_depth import AlignedDatasetDepth
         dataset = AlignedDatasetDepth()
+    elif opt.dataset_mode == 'appearance_flow':
+        from data.appearance_flow_dataloader import AppearanceFlowDataloader
+        dataset = AppearanceFlowDataloader()
     elif opt.dataset_mode == 'unaligned':
         from data.unaligned_dataset import UnalignedDataset
         dataset = UnalignedDataset()

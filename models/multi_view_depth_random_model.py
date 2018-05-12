@@ -308,13 +308,13 @@ class MultiViewDepthModel(BaseModel):
     def forward(self):
         add_grid = self.opt.add_grid
         rectified = self.opt.rectified
-        self.real_A = Variable(self.input_A)
-        self.real_B = Variable(self.input_B)
-        self.real_C = Variable(self.input_C)
-        self.real_mask = Variable(self.input_mask)
+        self.real_A = Variable(self.input_A,volatile=True)
+        self.real_B = Variable(self.input_B,volatile=True)
+        self.real_C = Variable(self.input_C,volatile=True)
+        self.real_mask = Variable(self.input_mask,volatile=True)
 
-        self.real_YawAB= Variable(self.input_YawAB)
-        self.real_YawCB = Variable(self.input_YawCB)
+        self.real_YawAB= Variable(self.input_YawAB,volatile=True)
+        self.real_YawCB = Variable(self.input_YawCB,volatile=True)
 
         b,c,h,w = self.real_A.size()
         zeros = Variable(torch.zeros((b,1)).cuda() )
@@ -322,9 +322,8 @@ class MultiViewDepthModel(BaseModel):
 
         pose_rel = torch.cat( [zeros,zeros,zeros,zeros,-self.real_YawCB, zeros], dim=1)
 
-        R = rotation_tensor(zeros, self.real_YawAB, zeros).cuda()
-        R_camera = rotation_tensor(np.pi/6.*ones, zeros, zeros).cuda()
-        R_final =  R_camera.bmm(R.bmm(R_camera.transpose(1,2)))
+        R = rotation_tensor(zeros,  zeros,self.real_YawAB).cuda()
+        R_final = R # R_camera.bmm(R.bmm(R_camera.transpose(1,2)))
 
         self.depth = self.netG(self.real_A, R_final)
         if self.opt.pred_mask:
@@ -346,36 +345,51 @@ class MultiViewDepthModel(BaseModel):
     def test(self):
         add_grid = self.opt.add_grid
         rectified = self.opt.rectified
-        self.real_A = Variable(self.input_A, volatile=True)
-        self.real_B = Variable(self.input_B, volatile=True)
-        self.fake_B_list = []
+        with torch.no_grad():
+            self.real_A = Variable(self.input_A, volatile=True)
+            self.real_B = Variable(self.input_B, volatile=True)
+            self.fake_B_list = []
 
-        NV = self.opt.test_views
-        b = self.real_A.size(0)
-        zeros = Variable(torch.zeros((b,1)).cuda() )
+            NV = self.opt.test_views
+            b,c,h,w = self.real_A.size()
+            zeros = Variable(torch.zeros((b,1)).cuda(),volatile=True )
+            ones = Variable(torch.ones((b,1)).cuda(),volatile=True )
 
-         #-4 / 9. * np.pi
-        # yaw += 8 / 9. * np.pi / (NV - 1)
-        yaw = 0
-        real_A = self.real_A
-        for i in range(NV):
-            yaw += 2*np.pi/NV
 
-            self.real_Yaw = Variable(-torch.Tensor([yaw]).cuda(self.gpu_ids[0], async=True)).unsqueeze(0)
-            self.depth = self.netG(real_A, self.real_Yaw) + self.dist
-            pose_rel = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
+            yaw = 0
+            real_A = self.real_A
+            for i in range(NV):
+                yaw += 2*np.pi/NV
 
-            self.fake_B_flow_converted = projection_layer2.inverse_warp(real_A, self.depth,
-                                                                        pose_rel, self.pose_abs[:b,:],
-                                                                        self.intrinsics[:b, :, :],
-                                                                        self.intrinsics_inv[:b, :, :])
-            self.fake_B = F.grid_sample(real_A, self.fake_B_flow_converted)
-            self.fake_B_list.append(self.fake_B)
+                self.real_Yaw = Variable(-torch.Tensor([yaw]).cuda(self.gpu_ids[0], async=True) ,volatile=True).unsqueeze(0)
+                pose_rel = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
 
-            if np.mod(i, NV/4) == 0:
-                print 'hi'
-                real_A = self.fake_B
-                yaw =0
+                R = rotation_tensor(zeros, zeros, self.real_Yaw).cuda()
+                R_final = R #R_camera.bmm(R.bmm(R_camera.transpose(1, 2)))
+
+                self.depth = self.netG(real_A, R_final)
+                if self.opt.pred_mask:
+                    self.mask = F.tanh(self.depth[:, 1, :, :]) * 1.5 - 0.5
+                    self.depth = self.depth[:, 0, :, :].unsqueeze(1)
+                self.depth = self.depth + self.dist
+
+                self.fake_B_flow_converted = projection_layer2.inverse_warp(real_A, self.depth,
+                                                                            pose_rel, self.pose_abs[:b, :],
+                                                                            self.intrinsics[:b, :, :],
+                                                                            self.intrinsics_inv[:b, :, :])
+
+                if self.opt.pred_mask:
+                    self.fake_B = F.grid_sample(real_A,
+                                                self.fake_B_flow_converted * self.real_mask.unsqueeze(-1).expand(b, h, w,
+                                                                                                                 2))
+                else:
+                    self.fake_B = F.grid_sample(real_A, self.fake_B_flow_converted)
+
+                self.fake_B_list.append(self.fake_B)
+
+                if self.opt.auto_aggressive and np.mod(i, NV/9) == 0:
+                    real_A = self.fake_B
+                    yaw =0
 
 
     # get image paths
@@ -444,10 +458,10 @@ class MultiViewDepthModel(BaseModel):
     def get_current_visuals_test(self):
         real_A = util.tensor2im(self.real_A.data)
         real_B = util.tensor2im(self.real_B.data)
-        visual_list = OrderedDict([('real_A', real_A)])
+        visual_list = OrderedDict([])
         for idx,fake_B_var in enumerate(self.fake_B_list):
-            visual_list['%d'%idx] = util.tensor2im(fake_B_var.data)
-        visual_list['real_B'] = real_B
+            visual_list['%03d'%idx] = util.tensor2im(fake_B_var.data)
+        # visual_list['real_B'] = real_B
         return visual_list
 
     def save(self, label):

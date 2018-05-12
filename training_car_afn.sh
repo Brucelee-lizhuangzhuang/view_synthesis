@@ -1,15 +1,15 @@
 #!/bin/bash
 python train.py\
     --dataroot ~/data/view_synthesis/car_v1/ \
-    --dataset_mode aligned_multi_view_random\
-    --name car_exp_neighbour \
-    --model multi_view_depth_random \
+    --dataset_mode appearance_flow\
+    --name car_afn \
+    --model appearance_flow \
     --save_epoch_freq 50 \
     --loadSize 256 \
     --fineSize 256 \
     --no_flip\
     --display_freq 100 \
-    --display_port 8098 \
+    --display_port 8099 \
     --no_dropout \
     --lr 0.00006 \
     --niter 100 \
@@ -19,10 +19,7 @@ python train.py\
     --nz 200\
     --lambda_tv 1\
     --norm batch\
-    --ignore_center\
     --train_split 1\
-    --number_samples 2\
-    --category car1\
     --only_neighbour
 
 #    --pred_mask

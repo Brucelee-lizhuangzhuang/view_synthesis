@@ -13,5 +13,6 @@ class TestOptions(BaseOptions):
         self.parser.add_argument('--n_samples', type=int, default=20, help='how many test images to run')
         self.parser.add_argument('--random_walk', action='store_true', help='no dropout for the generator')
         self.parser.add_argument('--test_views', type=int, default=20, help='how many test images to run')
+        self.parser.add_argument('--auto_aggressive', action='store_true', help='no dropout for the generator')
 
         self.isTrain = False
