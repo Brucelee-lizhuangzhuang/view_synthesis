@@ -339,6 +339,9 @@ class MultiViewDepthModel(BaseModel):
             self.fake_B = F.grid_sample(self.real_C, self.fake_B_flow_converted*self.real_mask.unsqueeze(-1).expand(b,h,w,2))
         else:
             self.fake_B = F.grid_sample(self.real_C, self.fake_B_flow_converted)
+
+        if self.opt.use_masked_L1:
+            self.fake_B = self.fake_B * self.real_mask
     # no backprop gradients
     def test(self):
         add_grid = self.opt.add_grid
@@ -395,18 +398,10 @@ class MultiViewDepthModel(BaseModel):
             self.loss_G_depth = 0. * self.loss_TV
 
         # Second, G(A) = B
-        if not self.opt.use_pyramid:
-            self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
-            self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
+        self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
+        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
 
-        else:
-            self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
 
-            self.loss_G_L1 = 0
-            real_B_downsampled = self.real_B
-            for fake_B in reversed(self.fake_B_pyramid):
-                self.loss_G_L1 += self.criterionL1(fake_B, real_B_downsampled) * self.opt.lambda_A / len(self.fake_B_pyramid)
-                real_B_downsampled = F.avg_pool2d(real_B_downsampled,2)
 
         self.loss_G = self.loss_G_L1 + self.loss_TV + self.loss_G_depth + self.loss_mask #+ self.loss_kl #+ self.loss_G_L1_masked
 
