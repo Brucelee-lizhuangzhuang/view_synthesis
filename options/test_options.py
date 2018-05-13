@@ -14,5 +14,7 @@ class TestOptions(BaseOptions):
         self.parser.add_argument('--random_walk', action='store_true', help='no dropout for the generator')
         self.parser.add_argument('--test_views', type=int, default=20, help='how many test images to run')
         self.parser.add_argument('--auto_aggressive', action='store_true', help='no dropout for the generator')
+        self.parser.add_argument('--idx_source_view', type=int, default='9', help='no dropout for the generator')
+        self.parser.add_argument('--only_neighbour', action='store_true', help='do not train center view')
 
         self.isTrain = False

@@ -2,7 +2,7 @@
 python train.py\
     --dataroot ~/data/view_synthesis/car_v1/ \
     --dataset_mode aligned_multi_view_random\
-    --name car_exp_full_batch\
+    --name car_density\
     --model multi_view_depth_random \
     --save_epoch_freq 50 \
     --loadSize 256 \
@@ -21,10 +21,10 @@ python train.py\
     --norm batch\
     --ignore_center\
     --train_split 1\
-    --number_samples 2\
     --category car1\
+    --n_training_views 3\
+    --only_neighbour
 
-#    --only_neighbour
 
 #    --pred_mask
 

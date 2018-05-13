@@ -6,9 +6,9 @@ import copy
 import matplotlib.pyplot as plt
 @click.command()
 @click.option("--pd_folder", type=click.Path(exists=True, dir_okay=True),
-              default='/home/xu/workspace/view_synthesis/results/car_exp_neighbour/evaluate_normal/', help="Input image.")
+              default='/home/xu/workspace/view_synthesis/results/car_exp_neighbour/evaluate/', help="Input image.")
 @click.option("--gt_folder", type=click.Path(exists=True, dir_okay=True),
-              default='/home/xu/data/view_synthesis/car_v1_test_fine', help="Output dest")
+              default='/home/xu/workspace/surreal/car_shapenet1_full_view_test/rgb', help="Output dest")
 def convert(pd_folder, gt_folder):
     gt_list = []
     pd_list = []
@@ -19,7 +19,7 @@ def convert(pd_folder, gt_folder):
             if i%360 == 0:
                 gt_list.append(list([]))
             gt_list[int(i/360)].append(os.path.join(gt_folder,file))
-            print i,file
+            print i
 
     for root, folders, _ in os.walk(pd_folder):
         for i,folder in enumerate(sorted(folders)):
@@ -35,40 +35,41 @@ def convert(pd_folder, gt_folder):
 
 
     view_gap = 360/len(pd_list)
-    for idx_source,views in enumerate(pd_list):
-        angles = (np.arange(-39, 41) + idx_source*view_gap) % 360
+    for i,views in enumerate(pd_list):
+        print i
+        angles = (np.arange(-40, 40) + i*view_gap ) % 360
         errors = np.zeros(360)
         errors2 = np.zeros(360)
-        for j,pd_path in enumerate(pd_list[idx_source]):
-            if j >= 80:
+        for j,pd_path in enumerate(pd_list[i]):
+            if j > 3200:
                 break
             idx_model = j/80
-
             idx_angle = j%80
             a = angles[idx_angle]
             gt_path = gt_list[idx_model][a]
+
             img_gt = cv2.imread(gt_path)
             img_pd = cv2.imread(pd_path)
-
 
             mask = np.where((img_gt==(64,64,64)).all(axis=2))
 
             loss,diff = compute_loss(img_gt,img_pd,mask)
+            print loss
             if  j%80 > 1:
-                loss2,diff2 = compute_loss(img_gt,img_gt_prev,mask)
+                loss2,diff2 = compute_loss(img_gt,img_gt_prev_prev,mask)
                 errors2[ a] += loss2
+                # cv2.imshow('s2', diff2.astype(np.uint8))
+
+            if j%80 > 0:
+                img_gt_prev_prev = copy.copy(img_gt_prev)
             img_gt_prev = copy.copy(img_gt)
-            # cv2.imshow('s1',img_gt)
-            # cv2.imshow('s2',img_pd)
+
             # cv2.imshow('s',diff.astype(np.uint8))
             # cv2.waitKey()
-            # print j,loss
-            errors[a] += loss
+            print j
+            errors[ a] += loss
 
-        np.save('./records/errors%02d.npy'%idx_source, errors)
-        #
-        #
-        plt.plot(np.arange(360), np.load('./records/errors%02d.npy'%idx_source),np.arange(360), errors2)
+        plt.plot(np.arange(360), errors,np.arange(360), errors2)
         plt.show()
 
 def compute_loss(img1, img2, mask):

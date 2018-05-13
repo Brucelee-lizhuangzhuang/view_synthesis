@@ -42,5 +42,6 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--number_samples', type=int, default=2, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
         self.parser.add_argument('--only_neighbour', action='store_true', help='do not train center view')
         self.parser.add_argument('--use_masked_L1', action='store_true', help='do not train center view')
+        self.parser.add_argument('--n_training_views', type=int, default=1, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
 
         self.isTrain = True

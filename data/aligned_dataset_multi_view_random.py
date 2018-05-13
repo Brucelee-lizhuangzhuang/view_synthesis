@@ -38,42 +38,45 @@ class AlignedDatasetMultiView(BaseDataset):
             # index = np.random.randint(0, self.__len__())
 
         if self.opt.phase == 'test' :
-            idx_A = 0 #np.random.randint(0, self.nv - 1) if self.opt.category == 'car'else int(self.nv/2)
-
+            idx_A = self.opt.idx_source_view #np.random.randint(0, self.nv - 1) if self.opt.category == 'car'else int(self.nv/2)
             idx_B = idx_A
             idx_C = idx_A
             yaw1 = 0
             yaw2 = 0
+
+
         else:
-            if self.opt.category in ['car','car1'] :
-                idx_A = np.random.randint(0, self.nv - 1)
-                choices = [2,1,-1,-2]
+            n_training_views = self.opt.n_training_views
+
+            training_view_indexes = range(0,self.nv,n_training_views)
+
+            if self.opt.category in ['car','car1','chair'] :
+                idx_A = np.random.choice(training_view_indexes)
 
                 if self.opt.ignore_center:
-                    idx_B = np.random.randint(0, self.nv - 2)
-                    idx_B = (self.nv-1) if idx_B == idx_A else idx_B
+                    training_view_indexes.remove(idx_A)
+
+                if n_training_views == 1:
+                    choices = [2,1,-1,-2]
                 else:
-                    idx_B = np.random.randint(0, self.nv - 1)
+                    choices = [n_training_views,-n_training_views]
 
                 if self.opt.only_neighbour:
                     idx_B = idx_A + np.random.choice(choices)
+                else:
+                    idx_B = np.random.choice(training_view_indexes)
 
-                # if idx_B >= 1: choices.append(-1)
-                # if idx_B <= self.nv-1 : choices.append(1)
-                idx_C = (idx_B + np.random.choice(choices)) if self.opt.number_samples == 3 else idx_A
+                idx_C = idx_A
 
                 yaw1 = -(idx_B-idx_A) * np.pi/9
                 yaw2 = -(idx_B-idx_C) * np.pi/9
 
                 idx_C = np.mod(idx_C,self.nv)
                 idx_B = np.mod(idx_B,self.nv)
-
-
             if self.opt.category == 'human':
                 idx_A = int(self.nv/2)
-                idx_B = np.random.randint(0, self.nv - 1)
-                # if idx_B >= 1: choices.append(-1)
-                # if idx_B <= self.nv-1 : choices.append(1)
+                idx_B = np.random.choice(training_view_indexes)
+
                 idx_C = idx_A
 
                 yaw1 = -(idx_B - idx_A) * np.pi / 18
@@ -84,7 +87,7 @@ class AlignedDatasetMultiView(BaseDataset):
 
         if self.opt.category == 'car':
             bg_color = (255,255,255)
-        if self.opt.category == 'car1':
+        if self.opt.category in [ 'car1', 'chair']:
             bg_color = (64,64,64)
         if self.opt.category == 'human':
             bg_color = (0,0,0)

@@ -1,8 +1,8 @@
 #!/bin/bash
 python train.py\
-    --dataroot ~/data/view_synthesis/car_v1/ \
+    --dataroot ~/data/view_synthesis/chair_train_elevtaed/ \
     --dataset_mode aligned_multi_view_random\
-    --name car_exp_full_batch\
+    --name chair_exp_neighbour \
     --model multi_view_depth_random \
     --save_epoch_freq 50 \
     --loadSize 256 \
@@ -11,20 +11,19 @@ python train.py\
     --display_freq 100 \
     --display_port 8098 \
     --no_dropout \
-    --lr 0.00006 \
+    --lr 0.0002 \
     --niter 100 \
     --niter_decay 100 \
     --lambda_gan 0 \
     --batchSize 16 \
     --nz 200\
-    --lambda_tv 1\
+    --lambda_tv 0\
     --norm batch\
     --ignore_center\
     --train_split 1\
     --number_samples 2\
-    --category car1\
-
-#    --only_neighbour
+    --category chair\
+    --only_neighbour\
 
 #    --pred_mask
 
