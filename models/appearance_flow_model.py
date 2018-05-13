@@ -30,7 +30,7 @@ class AFN(nn.Module):
         nf_mult = 1
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
-            nf_mult = min(2 ** n, 4)
+            nf_mult = min(2 ** n, 8)
             enc += [
                 nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult,
                           kernel_size=kw, stride=2, padding=padw)]
@@ -38,16 +38,16 @@ class AFN(nn.Module):
                 enc += [norm_layer(ndf * nf_mult)]
                 enc += [nl_layer_enc()]
 
-        enc += [nn.Linear(ndf * nf_mult, 4096), nn.LeakyReLU(0.2, True),
-                    nn.Linear(4096, 4096), nn.LeakyReLU(0.2, True)]
+	self.fc1 = nn.Sequential(*[nn.Linear(4*ndf * nf_mult, 4096), nn.LeakyReLU(0.2, True),
+                    nn.Linear(4096, 4096), nn.LeakyReLU(0.2, True)])
         self.enc = nn.Sequential(*enc)
 
-
-        deconv = [nn.Linear(4096+256, 4096), nn.LeakyReLU(0.2, True),
-                  nn.Linear(4096, 4096), nn.LeakyReLU(0.2, True)]
+        self.fc2 = nn.Sequential(*[nn.Linear(4096+256, 4096), nn.LeakyReLU(0.2, True),
+                  nn.Linear(4096, 4*ndf*nf_mult), nn.LeakyReLU(0.2, True)])
+        deconv = []
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
-            nf_mult = min(2 ** (n_layers - n - 1), 4)
+            nf_mult = min(2 ** (n_layers - n - 1), 8)
 
             upsample = 'bilinear' if n_layers - n < n_bilinear_layers else 'basic'
             deconv += networks.upsampleLayer(ndf * nf_mult_prev, ndf * nf_mult, upsample=upsample)
@@ -60,16 +60,18 @@ class AFN(nn.Module):
         else:
             deconv += networks.upsampleLayer(ndf, 2, upsample='basic')
 
-        view_decoder = [nn.Linear(18, 128), nn.LeakyReLU(0.2, True),
-                        nn.Linear(128, 256), nn.LeakyReLU(0.2, True)]
+        self.view_decoder = nn.Sequential(*[nn.Linear(18, 128), nn.LeakyReLU(0.2, True),
+                        nn.Linear(128, 256), nn.LeakyReLU(0.2, True)])
 
         self.deconv = nn.Sequential(*deconv)
         self.nz = nz
 
     def forward(self, x, t):
         z = self.enc(x)
-        z = torch.cat([z, self.deconv(t)],dim=1)
-
+	b,c,h,w = z.size()
+        z = self.fc1(z.view(b,-1))
+        z = torch.cat([z, self.view_decoder(t)],dim=1)
+        z = self.fc2(z).view(b,c,h,w)
         return self.deconv(z)
 
 
@@ -84,7 +86,7 @@ class AppearanceFlowModel(BaseModel):
         # load/define networks
         input_nc = opt.input_nc + 2 if opt.concat_grid else opt.input_nc
 
-        self.netG = AFN(input_nc, opt.ngf, n_layers=int(np.log2(opt.fineSize)), n_bilinear_layers=opt.n_bilinear_layers,
+        self.netG = AFN(input_nc, opt.ngf, n_layers=int(np.log2(opt.fineSize))-1, n_bilinear_layers=opt.n_bilinear_layers,
                          norm_layer=networks.get_norm_layer(norm_type=opt.norm),
                          nl_layer_enc=networks.get_non_linearity(layer_type=opt.nl_enc),
                          nl_layer_dec=networks.get_non_linearity(layer_type=opt.nl_dec),gpu_ids=opt.gpu_ids,
@@ -115,6 +117,16 @@ class AppearanceFlowModel(BaseModel):
             for optimizer in self.optimizers:
                 self.schedulers.append(networks.get_scheduler(optimizer, opt))
 
+        grid = np.zeros((opt.fineSize,opt.fineSize,2))
+        for i in range(grid.shape[0]):
+            for j in range(grid.shape[1]):
+                grid[i,j,0] = j
+                grid[i,j,1] = i
+        grid /= (opt.fineSize/2)
+        grid -= 1
+        self.grid = torch.from_numpy(grid).cuda().float() #Variable(torch.from_numpy(grid))
+        self.grid = self.grid.view(1,self.grid.size(0),self.grid.size(1),self.grid.size(2)).expand(opt.batchSize,opt.fineSize,opt.fineSize,2)
+        self.grid = Variable(self.grid)
 
         print('---------- Networks initialized -------------')
         networks.print_network(self.netG)
@@ -159,21 +171,20 @@ class AppearanceFlowModel(BaseModel):
         if self.opt.category == 'car1':
             return
 
-        self.input_A[self.maskA] = 0.
-        self.input_B[self.maskB] = 0.
+#        self.input_A[self.maskA] = 0.
+#        self.input_B[self.maskB] = 0.
 
     def forward(self):
 
         self.real_A = Variable(self.input_A)
         self.real_B = Variable(self.input_B)
         self.real_mask = Variable(self.input_mask)
-        self.real_B = Variable(self.input_T)
+        self.real_T = Variable(self.input_T)
 
         b,c,h,w = self.real_A.size()
 
-        t = 1
-        self.flow = self.netG(self.real_A, t)
-
+        self.flow = self.netG(self.real_A, self.real_T).permute(0,2,3,1)
+	self.flow = F.tanh(self.flow) #+self.grid[:b,:,:,:]
         self.fake_B = F.grid_sample(self.real_A, self.flow)
 
         if self.opt.use_masked_L1:
@@ -215,7 +226,7 @@ class AppearanceFlowModel(BaseModel):
         self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
 
-        self.loss_G = self.loss_G_L1 + self.loss_TV   #+ self.loss_kl #+ self.loss_G_L1_masked
+        self.loss_G = self.loss_G_L1 #+ self.loss_TV   #+ self.loss_kl #+ self.loss_G_L1_masked
 
         self.loss_G.backward()
 
@@ -238,11 +249,11 @@ class AppearanceFlowModel(BaseModel):
         real_A = util.tensor2im(self.real_A.data)
         fake_B = util.tensor2im(self.fake_B.data)
         real_B = util.tensor2im(self.real_B.data)
-        real_C = util.tensor2im(self.real_C.data)
+#        real_C = util.tensor2im(self.real_C.data)
 
         flow = util.tensor2im(self.flow.permute(0,3,1,2).data)
 
-        return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B),('real_C', real_C),
+        return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B),
                             ('flow',flow)])
 
     def get_current_visuals_test(self):

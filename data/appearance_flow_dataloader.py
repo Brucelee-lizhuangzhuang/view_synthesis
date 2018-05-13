@@ -38,6 +38,7 @@ class AppearanceFlowDataloader(BaseDataset):
         else:
             idx_B = np.random.randint(0, self.nv - 1)
 
+#	idx_B = idx_A
         view_code = np.zeros(18)
         view_code[idx_B] = 1
 
@@ -92,7 +93,7 @@ class AppearanceFlowDataloader(BaseDataset):
         data = np.array(image)
 
         r1, g1, b1 = bg_color  # Original value
-        r2, g2, b2 = 128, 128, 128  # Value that we want to replace it with
+        r2, g2, b2 = 255,255,255 #128, 128, 128  # Value that we want to replace it with
 
         red, green, blue = data[:, :, 0], data[:, :, 1], data[:, :, 2]
         mask = (red == r1) & (green == g1) & (blue == b1)
