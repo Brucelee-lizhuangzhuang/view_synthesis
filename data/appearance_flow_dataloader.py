@@ -38,7 +38,13 @@ class AppearanceFlowDataloader(BaseDataset):
         else:
             idx_B = np.random.randint(0, self.nv - 1)
 
-#	idx_B = idx_A
+
+        if self.opt.only_neighbour:
+            choices = [2, 1, -1, -2]
+            idx_B = idx_A + np.random.choice(choices)
+
+        idx_B = np.mod(idx_B, self.nv)
+
         view_code = np.zeros(18)
         view_code[idx_B] = 1
 
@@ -58,7 +64,6 @@ class AppearanceFlowDataloader(BaseDataset):
         B,mask = self.remapping_background(B, bg_color)
         mask = np.logical_not(mask)
         mask = mask.astype(np.float32)
-        # mask[mask==0] = -2
         B = self.transform(B)
 
         if self.opt.which_direction == 'BtoA':

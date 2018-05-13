@@ -36,14 +36,14 @@ class AFN(nn.Module):
                           kernel_size=kw, stride=2, padding=padw)]
             if norm_layer is not None and n < n_layers - 1:
                 enc += [norm_layer(ndf * nf_mult)]
-                enc += [nl_layer_enc()]
-
-	self.fc1 = nn.Sequential(*[nn.Linear(4*ndf * nf_mult, 4096), nn.LeakyReLU(0.2, True),
-                    nn.Linear(4096, 4096), nn.LeakyReLU(0.2, True)])
+            enc += [nl_layer_enc()]
         self.enc = nn.Sequential(*enc)
 
-        self.fc2 = nn.Sequential(*[nn.Linear(4096+256, 4096), nn.LeakyReLU(0.2, True),
-                  nn.Linear(4096, 4*ndf*nf_mult), nn.LeakyReLU(0.2, True)])
+        self.fc1 = nn.Sequential(*[nn.Linear(4*ndf * nf_mult, 4096),nn.BatchNorm1d(4096),nl_layer_enc(),
+                    nn.Linear(4096, 4096),nn.BatchNorm1d(4096), nl_layer_enc()])
+
+        self.fc2 = nn.Sequential(*[nn.Linear(4096+256, 4096),nn.BatchNorm1d(4096), nl_layer_enc(),
+                  nn.Linear(4096, 4*ndf*nf_mult), nn.BatchNorm1d(4*ndf*nf_mult),nl_layer_enc()])
         deconv = []
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
@@ -59,16 +59,16 @@ class AFN(nn.Module):
             deconv += networks.upsampleLayer(ndf, 2, upsample='bilinear')
         else:
             deconv += networks.upsampleLayer(ndf, 2, upsample='basic')
-
-        self.view_decoder = nn.Sequential(*[nn.Linear(18, 128), nn.LeakyReLU(0.2, True),
-                        nn.Linear(128, 256), nn.LeakyReLU(0.2, True)])
-
+        deconv += [nn.Tanh()]
         self.deconv = nn.Sequential(*deconv)
-        self.nz = nz
+
+        self.view_decoder = nn.Sequential(*[nn.Linear(18, 128), nn.BatchNorm1d(128), nn.LeakyReLU(0.2, True),
+                        nn.Linear(128, 256), nn.BatchNorm1d(256),nn.LeakyReLU(0.2, True)])
+
 
     def forward(self, x, t):
         z = self.enc(x)
-	b,c,h,w = z.size()
+        b,c,h,w = z.size()
         z = self.fc1(z.view(b,-1))
         z = torch.cat([z, self.view_decoder(t)],dim=1)
         z = self.fc2(z).view(b,c,h,w)
@@ -183,12 +183,11 @@ class AppearanceFlowModel(BaseModel):
 
         b,c,h,w = self.real_A.size()
 
-        self.flow = self.netG(self.real_A, self.real_T).permute(0,2,3,1)
-	self.flow = F.tanh(self.flow) #+self.grid[:b,:,:,:]
+        self.flow = self.netG(self.real_A, self.real_T).permute(0,2,3,1) + self.grid[:b,:,:,:]
         self.fake_B = F.grid_sample(self.real_A, self.flow)
-
-        if self.opt.use_masked_L1:
-            self.fake_B = self.fake_B*self.real_mask.unsqueeze(1).expand(b,3,h,w)
+        #
+        # if self.opt.use_masked_L1:
+        #     self.fake_B = self.fake_B*self.real_mask.unsqueeze(1).expand(b,3,h,w)
 
 
     # no backprop gradients
@@ -226,7 +225,7 @@ class AppearanceFlowModel(BaseModel):
         self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
 
-        self.loss_G = self.loss_G_L1 #+ self.loss_TV   #+ self.loss_kl #+ self.loss_G_L1_masked
+        self.loss_G = self.loss_G_L1 + self.loss_TV #  #+ self.loss_kl #+ self.loss_G_L1_masked
 
         self.loss_G.backward()
 

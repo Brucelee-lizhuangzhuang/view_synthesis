@@ -11,15 +11,17 @@ python train.py\
     --display_freq 100 \
     --display_port 8099 \
     --no_dropout \
-    --lr 0.00006 \
+    --lr 0.0001 \
     --niter 100 \
     --niter_decay 100 \
     --lambda_gan 0 \
     --batchSize 16 \
     --nz 200\
-    --lambda_tv 1\
+    --lambda_tv 0\
     --norm batch\
     --train_split 1\
+    --category car1\
+    --nl_enc relu\
     --only_neighbour
 
 #    --pred_mask
