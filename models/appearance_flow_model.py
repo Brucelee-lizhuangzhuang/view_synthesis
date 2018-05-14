@@ -193,7 +193,7 @@ class AppearanceFlowModel(BaseModel):
                 view_code[i,j] = 1
             self.real_T = Variable( torch.from_numpy(view_code.astype(np.float32)).cuda()).view(b,18)
         elif self.opt.view_representation == 'cos_sin':
-            angle = Variable(self.input_T)
+            angle = Variable(self.input_T) * np.pi/9
             self.real_T = torch.cat([angle.cos(), angle.sin()],dim=1)
         else:
             raise NotImplementedError('only support cos-sin or index')
