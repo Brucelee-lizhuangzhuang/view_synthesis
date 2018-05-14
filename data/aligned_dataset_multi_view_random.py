@@ -15,6 +15,9 @@ class AlignedDatasetMultiView(BaseDataset):
         self.paths = []
         self.random_AB = opt.random_AB
         self.nv = 18
+        if self.opt.list_path is not None and opt.phase == 'test':
+            self.nv = 360
+
         self.train_split = opt.train_split
 
         for i in range(self.nv):
@@ -30,20 +33,27 @@ class AlignedDatasetMultiView(BaseDataset):
 
         self.transform = get_transform(opt)
 
+        if self.opt.phase == 'test':
+            if self.opt.list_path is not None:
+                self.idx_list = np.loadtxt(self.opt.list_path,dtype=int)
     def __getitem__(self, index):
 
 
-        if self.opt.phase == 'test':
-            index += int(len(self.paths[int(self.nv/2)])*self.train_split)
-            # index = np.random.randint(0, self.__len__())
-
         if self.opt.phase == 'test' :
-            idx_A = self.opt.idx_source_view #np.random.randint(0, self.nv - 1) if self.opt.category == 'car'else int(self.nv/2)
-            idx_B = idx_A
-            idx_C = idx_A
-            yaw1 = 0
-            yaw2 = 0
+            if self.opt.list_path is not None:
+                idx_A,idx_B,index = self.idx_list[index,:]
+                idx_C = idx_A
+                yaw1 = -(idx_B-idx_A) * np.pi/180
+                yaw2 = -(idx_B-idx_C) * np.pi/180
+                idx_B = idx_B%360
+            else:
+                index += int(len(self.paths[int(self.nv/2)])*self.train_split)
 
+                idx_A = self.opt.idx_source_view #np.random.randint(0, self.nv - 1) if self.opt.category == 'car'else int(self.nv/2)
+                idx_B = idx_A
+                idx_C = idx_A
+                yaw1 = 0
+                yaw2 = 0
 
         else:
             n_training_views = self.opt.n_training_views
@@ -52,9 +62,6 @@ class AlignedDatasetMultiView(BaseDataset):
 
             if self.opt.category in ['car','car1','chair'] :
                 idx_A = np.random.choice(training_view_indexes)
-
-                if self.opt.ignore_center:
-                    training_view_indexes.remove(idx_A)
 
                 if n_training_views == 1:
                     choices = [2,1,-1,-2]
@@ -75,6 +82,8 @@ class AlignedDatasetMultiView(BaseDataset):
                 idx_B = np.mod(idx_B,self.nv)
             if self.opt.category == 'human':
                 idx_A = int(self.nv/2)
+
+                training_view_indexes.remove(idx_A)
                 idx_B = np.random.choice(training_view_indexes)
 
                 idx_C = idx_A
@@ -82,8 +91,6 @@ class AlignedDatasetMultiView(BaseDataset):
                 yaw1 = -(idx_B - idx_A) * np.pi / 18
                 yaw2 = -(idx_B - idx_C) * np.pi / 18
 
-        if self.opt.phase == 'test' :
-            idx_C = idx_A
 
         if self.opt.category == 'car':
             bg_color = (255,255,255)
@@ -99,7 +106,7 @@ class AlignedDatasetMultiView(BaseDataset):
         B = Image.open(self.paths[idx_B][index]).convert('RGB')
         B,mask = self.remapping_background(B, bg_color)
         mask = np.logical_not(mask)
-        mask = mask.astype(np.float32)
+        mask = mask.astype(np.uint8)
         # mask[mask==0] = -2
         B = self.transform(B)
 
@@ -123,13 +130,15 @@ class AlignedDatasetMultiView(BaseDataset):
             B = tmp.unsqueeze(0)
 
 
-        return {'A': A, 'B': B, 'C': C, 'YawAB': torch.Tensor([yaw1]),'YawCB': torch.Tensor([yaw2]),'mask': torch.Tensor(mask),
+        return {'A': A, 'B': B, 'C': C, 'YawAB': torch.Tensor([yaw1]),'YawCB': torch.Tensor([yaw2]),'mask': torch.ByteTensor(mask),
                 'A_paths': self.paths[int(self.nv/2)][index], }
 
     def __len__(self):
         if self.opt.phase == 'train':
             return int(len(self.paths[int(self.nv/2)])*self.train_split)
         else:
+            if self.opt.phase == 'test':
+                return self.idx_list.shape[0]
             return int(len(self.paths[int(self.nv/2)])*(1-self.train_split) )
 
     def name(self):

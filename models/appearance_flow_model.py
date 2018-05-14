@@ -62,7 +62,7 @@ class AFN(nn.Module):
         deconv += [nn.Tanh()]
         self.deconv = nn.Sequential(*deconv)
 
-        self.view_decoder = nn.Sequential(*[nn.Linear(18, 128), nn.BatchNorm1d(128), nn.LeakyReLU(0.2, True),
+        self.view_decoder = nn.Sequential(*[nn.Linear(nz, 128), nn.BatchNorm1d(128), nn.LeakyReLU(0.2, True),
                         nn.Linear(128, 256), nn.BatchNorm1d(256),nn.LeakyReLU(0.2, True)])
 
 
@@ -86,11 +86,18 @@ class AppearanceFlowModel(BaseModel):
         # load/define networks
         input_nc = opt.input_nc + 2 if opt.concat_grid else opt.input_nc
 
+        if self.opt.view_representation == 'index':
+            nz = 18
+        elif self.opt.view_representation == 'cos_sin':
+            nz = 2
+        else:
+            raise NotImplementedError('only support cos-sin or index')
+
         self.netG = AFN(input_nc, opt.ngf, n_layers=int(np.log2(opt.fineSize))-1, n_bilinear_layers=opt.n_bilinear_layers,
                          norm_layer=networks.get_norm_layer(norm_type=opt.norm),
                          nl_layer_enc=networks.get_non_linearity(layer_type=opt.nl_enc),
                          nl_layer_dec=networks.get_non_linearity(layer_type=opt.nl_dec),gpu_ids=opt.gpu_ids,
-                         nz=opt.nz, use_vae=opt.use_vae, pred_mask=opt.pred_mask)
+                         nz=nz, use_vae=opt.use_vae, pred_mask=opt.pred_mask)
 
         if len(opt.gpu_ids) > 0:
             self.netG.cuda(opt.gpu_ids[0])
@@ -154,9 +161,6 @@ class AppearanceFlowModel(BaseModel):
         self.input_mask = input_mask
         self.input_T = input_T
 
-
-        # print input_Yaw.size()
-
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
 
@@ -179,9 +183,21 @@ class AppearanceFlowModel(BaseModel):
         self.real_A = Variable(self.input_A)
         self.real_B = Variable(self.input_B)
         self.real_mask = Variable(self.input_mask)
-        self.real_T = Variable(self.input_T)
 
         b,c,h,w = self.real_A.size()
+
+        if self.opt.view_representation == 'index':
+            view_indexes = self.input_T.cpu().numpy().astype(np.int)
+            view_code = np.zeros((b,18))
+            for i,j in enumerate(view_indexes):
+                view_code[i,j] = 1
+            self.real_T = Variable( torch.from_numpy(view_code.astype(np.float32)).cuda()).view(b,18)
+        elif self.opt.view_representation == 'cos_sin':
+            angle = Variable(self.input_T)
+            self.real_T = torch.cat([angle.cos(), angle.sin()],dim=1)
+        else:
+            raise NotImplementedError('only support cos-sin or index')
+
 
         self.flow = self.netG(self.real_A, self.real_T).permute(0,2,3,1) + self.grid[:b,:,:,:]
         self.fake_B = F.grid_sample(self.real_A, self.flow)

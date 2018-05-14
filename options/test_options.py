@@ -16,5 +16,6 @@ class TestOptions(BaseOptions):
         self.parser.add_argument('--auto_aggressive', action='store_true', help='no dropout for the generator')
         self.parser.add_argument('--idx_source_view', type=int, default='9', help='no dropout for the generator')
         self.parser.add_argument('--only_neighbour', action='store_true', help='do not train center view')
+        self.parser.add_argument('--list_path', type=str, help='which epoch to load? set to latest to use latest cached model')
 
         self.isTrain = False

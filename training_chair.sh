@@ -11,7 +11,7 @@ python train.py\
     --display_freq 100 \
     --display_port 8098 \
     --no_dropout \
-    --lr 0.0002 \
+    --lr 0.00002 \
     --niter 100 \
     --niter_decay 100 \
     --lambda_gan 0 \

@@ -22,7 +22,11 @@ python train.py\
     --norm batch\
     --ignore_center\
     --train_split 0.8\
-    --category human
+    --category human\
+
+
+    #--nl_enc relu\
+
 
 
     #    --use_pyramid\

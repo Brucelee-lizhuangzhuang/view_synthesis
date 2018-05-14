@@ -45,9 +45,6 @@ class AppearanceFlowDataloader(BaseDataset):
 
         idx_B = np.mod(idx_B, self.nv)
 
-        view_code = np.zeros(18)
-        view_code[idx_B] = 1
-
 
         if self.opt.category == 'car':
             bg_color = (255,255,255)
@@ -82,7 +79,7 @@ class AppearanceFlowDataloader(BaseDataset):
             B = tmp.unsqueeze(0)
 
 
-        return {'A': A, 'B': B, 'mask': torch.Tensor(mask), 'T': torch.Tensor(view_code),
+        return {'A': A, 'B': B, 'mask': torch.Tensor(mask), 'T': torch.Tensor([idx_B]),
                 'A_paths': self.paths[int(self.nv/2)][index], }
 
     def __len__(self):

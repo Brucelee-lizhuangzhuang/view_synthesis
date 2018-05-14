@@ -2,7 +2,7 @@
 python train.py\
     --dataroot ~/data/view_synthesis/car_v1/ \
     --dataset_mode aligned_multi_view_random\
-    --name car_exp_full_batch\
+    --name debug\
     --model multi_view_depth_random \
     --save_epoch_freq 50 \
     --loadSize 256 \

@@ -92,8 +92,8 @@ class FTAE(nn.Module):
         self.enc = nn.Sequential(*enc)
         self.fc = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3)]) #, nn.LeakyReLU(0.2, True),
         if use_vae:
-            self.fc_var = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3), nn.LeakyReLU(0.2, True)])
-        self.fc2 = nn.Sequential(*[nn.Linear(nz * 3, ndf * nf_mult), nn.LeakyReLU(0.2, True)]) #, nn.BatchNorm1d(ndf * nf_mult)
+            self.fc_var = nn.Sequential(*[nn.Linear(ndf * nf_mult, nz * 3), nl_layer_enc()])
+        self.fc2 = nn.Sequential(*[nn.Linear(nz * 3, ndf * nf_mult),nl_layer_enc()]) #, nn.BatchNorm1d(ndf * nf_mult)
 
         deconv = []
         for n in range(1, n_layers):
@@ -345,10 +345,45 @@ class MultiViewDepthModel(BaseModel):
             self.fake_B = self.fake_B*self.real_mask.unsqueeze(1).expand(b,3,h,w)
     # no backprop gradients
     def test(self):
+        if self.opt.list_path is not None:
+            self.test_list()
+            return
         if self.opt.auto_aggressive:
             self.test_auto_aggressive()
         else:
             self.test_normal()
+
+    def test_list(self):
+
+        with torch.no_grad():
+            self.real_A = Variable(self.input_A, volatile=True)
+            self.real_B = Variable(self.input_B, volatile=True)
+            self.real_C = Variable(self.input_C, volatile=True)
+            self.real_mask = Variable(self.input_mask, volatile=True)
+            self.real_YawAB = Variable(self.input_YawAB, volatile=True)
+            self.real_YawCB = Variable(self.input_YawCB, volatile=True)
+
+            b,c,h,w = self.real_A.size()
+            zeros = Variable(torch.zeros((b,1)).cuda(),volatile=True )
+
+            pose_rel = torch.cat([zeros, zeros, zeros, zeros, -self.real_YawCB, zeros], dim=1)
+
+            R = rotation_tensor(zeros, zeros, self.real_YawAB).cuda()
+            # R_camera = rotation_tensor(np.pi/6*ones, zeros,zeros).cuda()
+            R_final = R  # R_camera.bmm(R.bmm(R_camera.transpose(1,2)))
+
+            self.depth = self.netG(self.real_A, R_final)
+            self.depth = self.depth + self.dist
+
+            self.fake_B_flow_converted = projection_layer2.inverse_warp(self.real_A, self.depth,
+                                                                        pose_rel, self.pose_abs[:b, :],
+                                                                        self.intrinsics[:b, :, :],
+                                                                        self.intrinsics_inv[:b, :, :])
+
+            self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
+            self.loss_G_L1 = torch.nn.L1Loss()(self.fake_B[self.real_mask.unsqueeze(1).expand(b,3,h,w)], self.real_B[self.real_mask.unsqueeze(1).expand(b,3,h,w)])
+    def get_errors(self):
+        return self.loss_G_L1
 
     def test_normal(self):
 
@@ -367,6 +402,10 @@ class MultiViewDepthModel(BaseModel):
             else:
                 whole_range = 2*np.pi
                 yaw = 0
+
+            if self.opt.category == 'human':
+                whole_range = np.pi  # 80
+                yaw = -np.pi/2. # -40
 
             yaw -= whole_range / NV
             real_A = self.real_A
@@ -509,7 +548,7 @@ class MultiViewDepthModel(BaseModel):
                             ])
 
     def get_current_visuals(self):
-        if not self.opt.isTrain:
+        if not self.opt.isTrain and self.opt.list_path is None:
             return self.get_current_visuals_test()
         real_A = util.tensor2im(self.real_A.data)
         fake_B = util.tensor2im(self.fake_B.data)
@@ -519,14 +558,8 @@ class MultiViewDepthModel(BaseModel):
         flow = util.tensor2im(self.fake_B_flow_converted.permute(0,3,1,2).data)
         depth = util.tensor2im(self.depth.data)
 
-        if self.opt.pred_mask:
-            mask = util.tensor2im(self.mask.data)
-            real_mask = util.tensor2im(self.real_mask.data)
-            return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B), ('real_C', real_C),
-                            ('flow', flow), ('depth', depth), ('mask', mask), ('real_mask', real_mask)])
-        else:
-            return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B),('real_C', real_C),
-                            ('flow',flow), ('depth', depth)])
+        return OrderedDict([('real_A', real_A), ('fake_B', fake_B), ('real_B', real_B),('real_C', real_C),
+                        ('flow',flow), ('depth', depth)])
 
     def get_current_visuals_test(self):
         real_A = util.tensor2im(self.real_A.data)
