@@ -15,8 +15,11 @@ class AlignedDatasetMultiView(BaseDataset):
         self.paths = []
         self.random_AB = opt.random_AB
         self.nv = 18
-        if self.opt.list_path is not None and opt.phase == 'test':
-            self.nv = 360
+        if self.opt.category == 'human': self.nv = 19
+
+        if self.opt.phase == 'test':
+            if self.opt.list_path is not None:
+                self.nv = 360
 
         self.train_split = opt.train_split
 
@@ -80,11 +83,11 @@ class AlignedDatasetMultiView(BaseDataset):
 
                 idx_C = np.mod(idx_C,self.nv)
                 idx_B = np.mod(idx_B,self.nv)
-            if self.opt.category == 'human':
+            if self.opt.category in ['surreal','human']:
                 idx_A = int(self.nv/2)
 
                 training_view_indexes.remove(idx_A)
-                idx_B = np.random.choice(training_view_indexes)
+                idx_B = idx_A + np.random.choice([4,-4])#np.random.choice(training_view_indexes)
 
                 idx_C = idx_A
 
@@ -92,7 +95,7 @@ class AlignedDatasetMultiView(BaseDataset):
                 yaw2 = -(idx_B - idx_C) * np.pi / 18
 
 
-        if self.opt.category == 'car':
+        if self.opt.category in [ 'car1', 'surreal']:
             bg_color = (255,255,255)
         if self.opt.category in [ 'car1', 'chair']:
             bg_color = (64,64,64)

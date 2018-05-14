@@ -46,6 +46,10 @@ def create_model(opt):
         assert(opt.dataset_mode in  ['aligned','aligned_with_C','aligned_multi_view_random'])
         from .multi_view_depth_random_model import MultiViewDepthModel
         model = MultiViewDepthModel()
+    elif opt.model == 'multi_view_flow_random':
+        assert(opt.dataset_mode in  ['aligned','aligned_with_C','aligned_multi_view_random'])
+        from .multi_view_flow_random_model import MultiViewFlowModel
+        model = MultiViewFlowModel()
     elif opt.model == 'appearance_flow':
         assert(opt.dataset_mode in  ['aligned','aligned_with_C','appearance_flow'])
         from .appearance_flow_model import AppearanceFlowModel
