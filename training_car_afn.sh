@@ -2,7 +2,7 @@
 python train.py\
     --dataroot ~/data/view_synthesis/car_v1/ \
     --dataset_mode appearance_flow\
-    --name debug \
+    --name car_afn_cos \
     --model appearance_flow \
     --save_epoch_freq 50 \
     --loadSize 256 \

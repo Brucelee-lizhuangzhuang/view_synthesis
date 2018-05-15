@@ -72,6 +72,8 @@ class AlignedDatasetMultiView(BaseDataset):
                     choices = [n_training_views,-n_training_views]
 
                 if self.opt.only_neighbour:
+                    if not self.opt.ignore_center:
+                        choices.append(0)
                     idx_B = idx_A + np.random.choice(choices)
                 else:
                     idx_B = np.random.choice(training_view_indexes)

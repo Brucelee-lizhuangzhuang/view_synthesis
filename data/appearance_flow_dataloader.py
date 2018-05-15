@@ -15,6 +15,10 @@ class AppearanceFlowDataloader(BaseDataset):
         self.paths = []
         self.random_AB = opt.random_AB
         self.nv = 18
+        if self.opt.phase == 'test':
+            if self.opt.list_path is not None:
+                self.nv = 360
+
         self.train_split = opt.train_split
 
         for i in range(self.nv):
@@ -23,27 +27,39 @@ class AppearanceFlowDataloader(BaseDataset):
 
         self.transform = get_transform(opt)
 
+        if self.opt.phase == 'test':
+            if self.opt.list_path is not None:
+                self.idx_list = np.loadtxt(self.opt.list_path,dtype=int)
+
     def __getitem__(self, index):
 
 
         if self.opt.phase == 'test':
-            index += int(len(self.paths[int(self.nv/2)])*self.train_split)
-            # index = np.random.randint(0, self.__len__())
-
-        idx_A = np.random.randint(0, self.nv - 1)
-
-        if self.opt.ignore_center:
-            idx_B = np.random.randint(0, self.nv - 2)
-            idx_B = (self.nv-1) if idx_B == idx_A else idx_B
+            if self.opt.list_path is not None:
+                idx_A,idx_B,index = self.idx_list[index,:]
+                idx_B = idx_B%360
+            else:
+                index += int(len(self.paths[int(self.nv/2)])*self.train_split)
+                # index = np.random.randint(0, self.__len__())
+                idx_A = 9
+                idx_B = idx_A
         else:
-            idx_B = np.random.randint(0, self.nv - 1)
+            idx_A = np.random.randint(0, self.nv - 1)
+
+            if self.opt.ignore_center:
+                idx_B = np.random.randint(0, self.nv - 2)
+                idx_B = (self.nv-1) if idx_B == idx_A else idx_B
+            else:
+                idx_B = np.random.randint(0, self.nv - 1)
 
 
-        if self.opt.only_neighbour:
-            choices = [2, 1, -1, -2]
-            idx_B = idx_A + np.random.choice(choices)
+            if self.opt.only_neighbour:
+                choices = [2, 1, -1, -2]
+                if not self.opt.ignore_center:
+                    choices.append(0)
+                idx_B = idx_A + np.random.choice(choices)
 
-        idx_B = np.mod(idx_B, self.nv)
+            idx_B = np.mod(idx_B, self.nv)
 
 
         if self.opt.category == 'car':
@@ -60,7 +76,7 @@ class AppearanceFlowDataloader(BaseDataset):
         B = Image.open(self.paths[idx_B][index]).convert('RGB')
         B,mask = self.remapping_background(B, bg_color)
         mask = np.logical_not(mask)
-        mask = mask.astype(np.float32)
+        mask = mask.astype(np.uint8)
         B = self.transform(B)
 
         if self.opt.which_direction == 'BtoA':
@@ -79,13 +95,15 @@ class AppearanceFlowDataloader(BaseDataset):
             B = tmp.unsqueeze(0)
 
 
-        return {'A': A, 'B': B, 'mask': torch.Tensor(mask), 'T': torch.Tensor([idx_B]),
+        return {'A': A, 'B': B, 'mask': torch.ByteTensor(mask), 'T': torch.Tensor([idx_B]),
                 'A_paths': self.paths[int(self.nv/2)][index], }
 
     def __len__(self):
         if self.opt.phase == 'train':
             return int(len(self.paths[int(self.nv/2)])*self.train_split)
         else:
+            if self.opt.phase == 'test':
+                return self.idx_list.shape[0]
             return int(len(self.paths[int(self.nv/2)])*(1-self.train_split) )
 
     def name(self):

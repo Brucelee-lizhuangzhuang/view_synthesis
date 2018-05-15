@@ -261,23 +261,16 @@ class MultiViewFlowModel(BaseModel):
             self.real_YawCB = Variable(self.input_YawCB, volatile=True)
 
             b,c,h,w = self.real_A.size()
-            zeros = Variable(torch.zeros((b,1)).cuda(),volatile=True )
-
-            pose_rel = torch.cat([zeros, zeros, zeros, zeros, -self.real_YawCB, zeros], dim=1)
+            zeros = Variable(torch.zeros((b, 1)).cuda())
 
             R = rotation_tensor(zeros, zeros, self.real_YawAB).cuda()
-            # R_camera = rotation_tensor(np.pi/6*ones, zeros,zeros).cuda()
             R_final = R  # R_camera.bmm(R.bmm(R_camera.transpose(1,2)))
 
-            self.depth = self.netG(self.real_A, R_final)
-            self.depth = self.depth + self.dist
+            self.flow = self.netG(self.real_A, R_final).permute(0, 2, 3, 1)
+            self.flow_converted = self.flow + self.grid[:b, :, :, :]
 
-            self.fake_B_flow_converted = projection_layer2.inverse_warp(self.real_A, self.depth,
-                                                                        pose_rel, self.pose_abs[:b, :],
-                                                                        self.intrinsics[:b, :, :],
-                                                                        self.intrinsics_inv[:b, :, :])
+            self.fake_B = F.grid_sample(self.real_C, self.flow_converted)
 
-            self.fake_B = F.grid_sample(self.real_A, self.fake_B_flow_converted)
             self.loss_G_L1 = torch.nn.L1Loss()(self.fake_B[self.real_mask.unsqueeze(1).expand(b,3,h,w)], self.real_B[self.real_mask.unsqueeze(1).expand(b,3,h,w)])
     def get_errors(self):
         return self.loss_G_L1

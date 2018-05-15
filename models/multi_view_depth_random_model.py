@@ -4,14 +4,11 @@ import os
 from collections import OrderedDict
 from torch.autograd import Variable
 import util.util as util
-from util.image_pool import ImagePool
 from .base_model import BaseModel
 from . import networks
 import torch.nn as nn
 import torch.nn.functional as F
 import itertools
-import torchvision
-from projection_layer import inverse_warp
 import projection_layer2
 
 ### Feature Transformer Network
@@ -210,6 +207,11 @@ class MultiViewDepthModel(BaseModel):
             self.dist = 1.4 # this is to ease the generation of depth, so that depth can be zero meaned
             sensor_size = 32.
             focal_length = 35.
+        elif self.opt.category == 'surreal':
+            self.pose_abs = torch.cat( [zeros,-ones,4*ones,zeros,zeros,zeros], dim=1)
+            self.dist = 4 # this is to ease the generation of depth, so that depth can be zero meaned
+            sensor_size = 32.
+            focal_length = 60.
         else:
             raise NotImplementedError("unknown category")
 
@@ -261,50 +263,50 @@ class MultiViewDepthModel(BaseModel):
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
         #
-        if self.opt.category == 'car':
-
-            self.maskB = torch.sum(self.input_B, dim=1)
-            self.maskB = (self.maskB >= 3.0).unsqueeze(1)
-            self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
-            #
-            self.maskA = torch.sum(self.input_A, dim=1)
-            self.maskA = (self.maskA >= 3.0).unsqueeze(1)
-            self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
-
-            #
-            self.maskC = torch.sum(self.input_C, dim=1)
-            self.maskC = (self.maskC >= 3.0).unsqueeze(1)
-            self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
-
-        if self.opt.category == 'human':
-
-            self.maskB = torch.sum(self.input_B, dim=1)
-            self.maskB = (self.maskB <= -3.0).unsqueeze(1)
-            self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
-            #
-            self.maskA = torch.sum(self.input_A, dim=1)
-            self.maskA = (self.maskA <= -3.0).unsqueeze(1)
-            self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
-
-            #
-            self.maskC = torch.sum(self.input_C, dim=1)
-            self.maskC = (self.maskC <= -3.0).unsqueeze(1)
-            self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
-
-        self.maskB_fg = torch.sum(self.input_B, dim=1)
-        self.maskB_fg = (self.maskB_fg < 3.0).unsqueeze(1)
-        self.maskB_fg = self.maskB_fg.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        # if self.opt.category == 'car':
         #
-        self.maskA_fg = torch.sum(self.input_A, dim=1)
-        self.maskA_fg = (self.maskA_fg < 3.0).unsqueeze(1)
-        self.maskA_fg = self.maskA_fg.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+        #     self.maskB = torch.sum(self.input_B, dim=1)
+        #     self.maskB = (self.maskB >= 3.0).unsqueeze(1)
+        #     self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        #     #
+        #     self.maskA = torch.sum(self.input_A, dim=1)
+        #     self.maskA = (self.maskA >= 3.0).unsqueeze(1)
+        #     self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+        #
+        #     #
+        #     self.maskC = torch.sum(self.input_C, dim=1)
+        #     self.maskC = (self.maskC >= 3.0).unsqueeze(1)
+        #     self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
+        #
+        # if self.opt.category == 'human':
+        #
+        #     self.maskB = torch.sum(self.input_B, dim=1)
+        #     self.maskB = (self.maskB <= -3.0).unsqueeze(1)
+        #     self.maskB = self.maskB.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        #     #
+        #     self.maskA = torch.sum(self.input_A, dim=1)
+        #     self.maskA = (self.maskA <= -3.0).unsqueeze(1)
+        #     self.maskA = self.maskA.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
+        #
+        #     #
+        #     self.maskC = torch.sum(self.input_C, dim=1)
+        #     self.maskC = (self.maskC <= -3.0).unsqueeze(1)
+        #     self.maskC = self.maskC.expand(self.input_C.size(0),3,self.input_C.size(2),self.input_C.size(3))
+        #
+        # self.maskB_fg = torch.sum(self.input_B, dim=1)
+        # self.maskB_fg = (self.maskB_fg < 3.0).unsqueeze(1)
+        # self.maskB_fg = self.maskB_fg.expand(self.input_B.size(0),3,self.input_B.size(2),self.input_B.size(3))
+        # #
+        # self.maskA_fg = torch.sum(self.input_A, dim=1)
+        # self.maskA_fg = (self.maskA_fg < 3.0).unsqueeze(1)
+        # self.maskA_fg = self.maskA_fg.expand(self.input_A.size(0),3,self.input_A.size(2),self.input_A.size(3))
 
         if self.opt.category in ['car1','chair']:
             return
 
-        self.input_A[self.maskA] = 0.
-        self.input_B[self.maskB] = 0.
-        self.input_C[self.maskC] = 0.
+        # self.input_A[self.maskA] = 0.
+        # self.input_B[self.maskB] = 0.
+        # self.input_C[self.maskC] = 0.
 
     def forward(self):
         add_grid = self.opt.add_grid
@@ -526,7 +528,7 @@ class MultiViewDepthModel(BaseModel):
             self.loss_G_depth = 0. * self.loss_TV
 
         # Second, G(A) = B
-        self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
+        # self.loss_G_L1_masked = self.criterionL1(self.fake_B[self.maskB_fg], self.real_B[self.maskB_fg]) * self.opt.lambda_A
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
 
         self.loss_G = self.loss_G_L1 + self.loss_TV + self.loss_G_depth + self.loss_mask #+ self.loss_kl #+ self.loss_G_L1_masked
@@ -542,14 +544,16 @@ class MultiViewDepthModel(BaseModel):
 
     def get_current_errors(self):
         return OrderedDict([('G_L1', self.loss_G_L1.data[0]),
-                            ('G_L1_masked', self.loss_G_L1_masked.data[0]),
                             ('F_L1', self.loss_G_depth.data[0]),
                             ('TV', self.loss_TV.data[0]),
                             ])
 
+    # ('G_L1_masked', self.loss_G_L1_masked.data[0]),
+
     def get_current_visuals(self):
-        if not self.opt.isTrain and self.opt.list_path is None:
-            return self.get_current_visuals_test()
+        if not self.opt.isTrain:
+            if self.opt.list_path is None:
+                return self.get_current_visuals_test()
         real_A = util.tensor2im(self.real_A.data)
         fake_B = util.tensor2im(self.fake_B.data)
         real_B = util.tensor2im(self.real_B.data)

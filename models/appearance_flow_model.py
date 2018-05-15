@@ -205,9 +205,14 @@ class AppearanceFlowModel(BaseModel):
         # if self.opt.use_masked_L1:
         #     self.fake_B = self.fake_B*self.real_mask.unsqueeze(1).expand(b,3,h,w)
 
+    def test(self):
+        if self.opt.list_path is not None:
+            self.test_list()
+        else:
+            self.test_normal()
 
     # no backprop gradients
-    def test(self):
+    def test_normal(self):
 
         with torch.no_grad():
             self.real_A = Variable(self.input_A, volatile=True)
@@ -216,19 +221,51 @@ class AppearanceFlowModel(BaseModel):
 
             NV = self.opt.test_views
             b,c,h,w = self.real_A.size()
+            self.netG.eval()
+            for i in np.arange(NV)-40:
+                angle = Variable(torch.Tensor([i+180]).cuda() ).unsqueeze(0) * np.pi / 180
+                real_T = torch.cat([angle.cos(), angle.sin()], dim=1)
 
+                self.flow = self.netG(self.real_A, real_T).permute(0, 2, 3, 1) + self.grid[:b, :, :, :]
+                self.fake_B = F.grid_sample(self.real_A, self.flow)
 
-            yaw = 0
-            real_A = self.real_A
-            for i in range(NV):
-                yaw += 2*np.pi/NV
                 self.fake_B_list.append(self.fake_B)
 
-                if self.opt.auto_aggressive and np.mod(i, NV/9) == 0:
-                    real_A = self.fake_B
-                    yaw =0
+    def test_list(self):
 
+        with torch.no_grad():
+            self.real_A = Variable(self.input_A, volatile=True)
+            self.real_B = Variable(self.input_B, volatile=True)
+            self.real_mask = Variable(self.input_mask, volatile=True)
+            self.netG.eval()
 
+            b,c,h,w = self.real_A.size()
+            zeros = Variable(torch.zeros((b,1)).cuda(),volatile=True )
+
+            angle = Variable(self.input_T) * np.pi / 180
+            real_T = torch.cat([angle.cos(), angle.sin()], dim=1)
+
+            self.flow = self.netG(self.real_A, real_T).permute(0, 2, 3, 1) + self.grid[:b, :, :, :]
+            self.fake_B = F.grid_sample(self.real_A, self.flow)
+
+            self.loss_G_L1 = torch.nn.L1Loss()(self.fake_B[self.real_mask.unsqueeze(1).expand(b,3,h,w)], self.real_B[self.real_mask.unsqueeze(1).expand(b,3,h,w)])
+
+    def convert_view(self, input_T, b):
+        if self.opt.view_representation == 'index':
+            view_indexes = input_T.cpu().numpy().astype(np.int)
+            view_code = np.zeros((b, 18))
+            for i, j in enumerate(view_indexes):
+                view_code[i, j] = 1
+            real_T = Variable(torch.from_numpy(view_code.astype(np.float32)).cuda()).view(b, 18)
+        elif self.opt.view_representation == 'cos_sin':
+            angle = Variable(input_T) * np.pi / 9
+            real_T = torch.cat([angle.cos(), angle.sin()], dim=1)
+        else:
+            raise NotImplementedError('only support cos-sin or index')
+        return real_T
+
+    def get_errors(self):
+        return self.loss_G_L1
     # get image paths
     def get_image_paths(self):
         return self.image_paths
@@ -260,7 +297,8 @@ class AppearanceFlowModel(BaseModel):
 
     def get_current_visuals(self):
         if not self.opt.isTrain:
-            return self.get_current_visuals_test()
+            if self.opt.list_path is None:
+                return self.get_current_visuals_test()
         real_A = util.tensor2im(self.real_A.data)
         fake_B = util.tensor2im(self.fake_B.data)
         real_B = util.tensor2im(self.real_B.data)
