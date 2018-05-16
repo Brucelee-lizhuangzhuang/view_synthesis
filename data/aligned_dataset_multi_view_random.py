@@ -16,6 +16,7 @@ class AlignedDatasetMultiView(BaseDataset):
         self.random_AB = opt.random_AB
         self.nv = 18
         if self.opt.category == 'human': self.nv = 19
+        if self.opt.category == 'surreal': self.nv = 3
 
         if self.opt.phase == 'test':
             if self.opt.list_path is not None:
@@ -50,7 +51,7 @@ class AlignedDatasetMultiView(BaseDataset):
                 yaw2 = -(idx_B-idx_C) * np.pi/180
                 idx_B = idx_B%360
             else:
-                index += int(len(self.paths[int(self.nv/2)])*self.train_split)
+                index += int(len(self.paths[int(self.nv/2)])*self.train_split)#np.random.randint(self.__len__())
 
                 idx_A = self.opt.idx_source_view #np.random.randint(0, self.nv - 1) if self.opt.category == 'car'else int(self.nv/2)
                 idx_B = idx_A
@@ -85,16 +86,25 @@ class AlignedDatasetMultiView(BaseDataset):
 
                 idx_C = np.mod(idx_C,self.nv)
                 idx_B = np.mod(idx_B,self.nv)
-            if self.opt.category in ['surreal','human']:
+            if self.opt.category in ['human']:
                 idx_A = int(self.nv/2)
 
                 training_view_indexes.remove(idx_A)
-                idx_B = idx_A + np.random.choice([4,-4])#np.random.choice(training_view_indexes)
+                idx_B = np.random.choice(training_view_indexes)
 
                 idx_C = idx_A
 
                 yaw1 = -(idx_B - idx_A) * np.pi / 18
                 yaw2 = -(idx_B - idx_C) * np.pi / 18
+            if self.opt.category in ['surreal']:
+                idx_A = int(self.nv/2)
+
+                idx_B = np.random.choice([0,2])#np.random.choice(training_view_indexes)
+
+                idx_C = idx_A
+
+                yaw1 = -(idx_B - idx_A) * np.pi *2 / 9.
+                yaw2 = -(idx_B - idx_C) * np.pi *2 / 9.
 
 
         if self.opt.category in [ 'car1', 'surreal']:
@@ -142,7 +152,7 @@ class AlignedDatasetMultiView(BaseDataset):
         if self.opt.phase == 'train':
             return int(len(self.paths[int(self.nv/2)])*self.train_split)
         else:
-            if self.opt.phase == 'test':
+            if self.opt.list_path is not None:
                 return self.idx_list.shape[0]
             return int(len(self.paths[int(self.nv/2)])*(1-self.train_split) )
 

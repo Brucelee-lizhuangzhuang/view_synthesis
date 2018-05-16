@@ -2,7 +2,7 @@
 python train.py\
     --dataroot ~/data/view_synthesis/car_v1/ \
     --dataset_mode appearance_flow\
-    --name car_afn_cos \
+    --name car_afn_cos_relative \
     --model appearance_flow \
     --save_epoch_freq 50 \
     --loadSize 256 \
@@ -23,7 +23,8 @@ python train.py\
     --category car1\
     --nl_enc relu\
     --only_neighbour\
-    --view_representation cos_sin
+    --view_representation cos_sin\
+    --relative
 
 #    --pred_mask
 

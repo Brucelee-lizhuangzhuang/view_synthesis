@@ -51,16 +51,21 @@ class AppearanceFlowDataloader(BaseDataset):
                 idx_B = (self.nv-1) if idx_B == idx_A else idx_B
             else:
                 idx_B = np.random.randint(0, self.nv - 1)
-
+            delta = idx_B - idx_A
 
             if self.opt.only_neighbour:
                 choices = [2, 1, -1, -2]
                 if not self.opt.ignore_center:
                     choices.append(0)
-                idx_B = idx_A + np.random.choice(choices)
+                delta = np.random.choice(choices)
+                idx_B = idx_A + delta
+
 
             idx_B = np.mod(idx_B, self.nv)
-
+            if self.opt.relative:
+                T = delta
+            else:
+                T = idx_B
 
         if self.opt.category == 'car':
             bg_color = (255,255,255)
@@ -95,7 +100,7 @@ class AppearanceFlowDataloader(BaseDataset):
             B = tmp.unsqueeze(0)
 
 
-        return {'A': A, 'B': B, 'mask': torch.ByteTensor(mask), 'T': torch.Tensor([idx_B]),
+        return {'A': A, 'B': B, 'mask': torch.ByteTensor(mask), 'T': torch.Tensor([T]),
                 'A_paths': self.paths[int(self.nv/2)][index], }
 
     def __len__(self):

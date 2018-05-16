@@ -301,22 +301,15 @@ class MultiViewFlowModel(BaseModel):
             real_A = self.real_A
             for i in range(NV):
                 yaw += whole_range/NV
-
                 self.real_Yaw = Variable(-torch.Tensor([yaw]).cuda(self.gpu_ids[0], async=True) ,volatile=True).unsqueeze(0)
-                pose_rel = torch.cat([zeros, zeros, zeros, zeros, -self.real_Yaw, zeros], dim=1)
 
                 R = rotation_tensor(zeros, zeros, self.real_Yaw).cuda()
-                R_final = R #R_camera.bmm(R.bmm(R_camera.transpose(1, 2)))
+                R_final = R  # R_camera.bmm(R.bmm(R_camera.transpose(1,2)))
 
-                self.depth = self.netG(real_A, R_final)
-                self.depth = self.depth + self.dist
+                self.flow = self.netG(self.real_A, R_final).permute(0, 2, 3, 1)
+                self.flow_converted = self.flow + self.grid[:b, :, :, :]
 
-                self.fake_B_flow_converted = projection_layer2.inverse_warp(real_A, self.depth,
-                                                                            pose_rel, self.pose_abs[:b, :],
-                                                                            self.intrinsics[:b, :, :],
-                                                                            self.intrinsics_inv[:b, :, :])
-
-                self.fake_B = F.grid_sample(real_A, self.fake_B_flow_converted)
+                self.fake_B = F.grid_sample(real_A, self.flow_converted)
 
                 self.fake_B_list.append(self.fake_B)
 

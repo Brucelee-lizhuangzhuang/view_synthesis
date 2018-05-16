@@ -64,6 +64,7 @@ class BaseOptions():
         self.parser.add_argument('--category', type=str, default='car', help='non-linearity activation: relu | lrelu | elu')
         self.parser.add_argument('--pred_mask', action='store_true', help='adding grid')
         self.parser.add_argument('--view_representation', type=str, default='index', help='non-linearity activation: relu | lrelu | elu')
+        self.parser.add_argument('--relative', action='store_true', help='adding grid')
 
 
         self.initialized = True
